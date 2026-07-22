@@ -1,18 +1,22 @@
 using System;
+using UnityEngine;
 
 namespace SLG.Core
 {
     [Serializable]
-    public readonly struct GridCoordinate : IEquatable<GridCoordinate>
+    public struct GridCoordinate : IEquatable<GridCoordinate>
     {
+        [SerializeField] private int x;
+        [SerializeField] private int y;
+
         public GridCoordinate(int x, int y)
         {
-            X = x;
-            Y = y;
+            this.x = x;
+            this.y = y;
         }
 
-        public int X { get; }
-        public int Y { get; }
+        public int X => x;
+        public int Y => y;
 
         public bool Equals(GridCoordinate other)
         {

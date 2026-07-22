@@ -1,4 +1,5 @@
 using SLG.Core;
+using SLG.Units;
 using UnityEngine;
 
 namespace SLG.Grid
@@ -15,6 +16,10 @@ namespace SLG.Grid
         [SerializeField] private Color tileColor = new Color(0.24f, 0.29f, 0.34f, 1f);
         [SerializeField] private Color hoverColor = new Color(0.43f, 0.65f, 0.9f, 1f);
         [SerializeField] private Color selectedColor = new Color(1f, 0.82f, 0.25f, 1f);
+        [SerializeField] private Color movementRangeColor = new Color(0.22f, 0.55f, 0.32f, 1f);
+
+        [Header("Selection")]
+        [SerializeField] private UnitSelectionController unitSelectionController;
 
         private Tile[,] tiles;
         private Tile selectedTile;
@@ -23,9 +28,22 @@ namespace SLG.Grid
         public int Height => height;
         public float TileSize => tileSize;
 
+        public Vector3 GetTileWorldPosition(GridCoordinate coordinate)
+        {
+            Vector3 originOffset = new Vector3((width - 1) * tileSize * 0.5f, 0f, (height - 1) * tileSize * 0.5f);
+            return new Vector3(coordinate.X * tileSize, 0f, coordinate.Y * tileSize) - originOffset + transform.position;
+        }
+
         private void Start()
         {
             GenerateGrid();
+            unitSelectionController?.InitializeUnitsOnGrid();
+        }
+
+        public void HandleTileClicked(Tile tile)
+        {
+            unitSelectionController?.DeselectCurrentUnit();
+            SelectTile(tile);
         }
 
         public void SelectTile(Tile tile)
@@ -43,6 +61,17 @@ namespace SLG.Grid
             selectedTile = tile;
             selectedTile.SetSelected(true);
             Debug.Log($"Selected Tile: ({selectedTile.X},{selectedTile.Y})");
+        }
+
+        public void ClearSelectedTile()
+        {
+            if (selectedTile == null)
+            {
+                return;
+            }
+
+            selectedTile.SetSelected(false);
+            selectedTile = null;
         }
 
         public bool TryGetTile(GridCoordinate coordinate, out Tile tile)
@@ -84,7 +113,7 @@ namespace SLG.Grid
                     Tile tile = Instantiate(tilePrefab, position, Quaternion.identity, transform);
                     tile.name = $"Tile {coordinate}";
                     tile.transform.localScale = new Vector3(tileSize, 0.1f, tileSize);
-                    tile.Initialize(this, coordinate, tileColor, hoverColor, selectedColor);
+                    tile.Initialize(this, coordinate, tileColor, hoverColor, selectedColor, movementRangeColor);
                     tiles[x, y] = tile;
                 }
             }

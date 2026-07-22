@@ -19,13 +19,16 @@ namespace SLG.Grid
         private Color normalColor;
         private Color hoverColor;
         private Color selectedColor;
+        private Color movementRangeColor;
+        private bool isHovered;
         private bool isSelected;
+        private bool isInMovementRange;
 
         public int X => x;
         public int Y => y;
         public GridCoordinate Coordinate => new GridCoordinate(x, y);
 
-        public void Initialize(GridSystem owner, GridCoordinate coordinate, Color baseColor, Color hover, Color selected)
+        public void Initialize(GridSystem owner, GridCoordinate coordinate, Color baseColor, Color hover, Color selected, Color movementRange)
         {
             gridSystem = owner;
             x = coordinate.X;
@@ -33,14 +36,21 @@ namespace SLG.Grid
             normalColor = baseColor;
             hoverColor = hover;
             selectedColor = selected;
+            movementRangeColor = movementRange;
 
-            ApplyColor(normalColor);
+            RefreshVisualState();
         }
 
         public void SetSelected(bool selected)
         {
             isSelected = selected;
-            ApplyColor(isSelected ? selectedColor : normalColor);
+            RefreshVisualState();
+        }
+
+        public void SetMovementRangeHighlighted(bool highlighted)
+        {
+            isInMovementRange = highlighted;
+            RefreshVisualState();
         }
 
         private void Awake()
@@ -50,23 +60,19 @@ namespace SLG.Grid
 
         private void OnMouseEnter()
         {
-            if (!isSelected)
-            {
-                ApplyColor(hoverColor);
-            }
+            isHovered = true;
+            RefreshVisualState();
         }
 
         private void OnMouseExit()
         {
-            if (!isSelected)
-            {
-                ApplyColor(normalColor);
-            }
+            isHovered = false;
+            RefreshVisualState();
         }
 
         private void OnMouseDown()
         {
-            gridSystem?.SelectTile(this);
+            gridSystem?.HandleTileClicked(this);
         }
 
         private bool CacheRenderer()
@@ -95,6 +101,23 @@ namespace SLG.Grid
             propertyBlock.SetColor(BaseColorId, color);
             propertyBlock.SetColor(ColorId, color);
             meshRenderer.SetPropertyBlock(propertyBlock);
+        }
+
+        private void RefreshVisualState()
+        {
+            if (isSelected)
+            {
+                ApplyColor(selectedColor);
+                return;
+            }
+
+            if (isHovered)
+            {
+                ApplyColor(hoverColor);
+                return;
+            }
+
+            ApplyColor(isInMovementRange ? movementRangeColor : normalColor);
         }
     }
 }
