@@ -12,7 +12,9 @@ namespace SLG.Core
         [SerializeField] private GridSystem gridSystem;
         [SerializeField] private UnitSelectionController unitSelectionController;
         [SerializeField] private Text turnLabel;
+        [SerializeField] private Text resultLabel;
         [SerializeField] private Button endTurnButton;
+        [SerializeField] private Button waitButton;
 
         private readonly List<Unit> units = new List<Unit>();
         private readonly List<Tile> reachableTiles = new List<Tile>();
@@ -21,9 +23,11 @@ namespace SLG.Core
         private BattlePhase currentPhase = BattlePhase.PlayerTurn;
         private bool isEnemyActing;
         private bool pendingEnemyTurn;
+        private bool battleEnded;
 
         public BattlePhase CurrentPhase => currentPhase;
-        public bool IsPlayerInputAllowed => currentPhase == BattlePhase.PlayerTurn && !isEnemyActing && unitSelectionController != null && !unitSelectionController.IsUnitMoving;
+        public bool IsBattleEnded => battleEnded;
+        public bool IsPlayerInputAllowed => !battleEnded && currentPhase == BattlePhase.PlayerTurn && !isEnemyActing && unitSelectionController != null && !unitSelectionController.IsUnitMoving;
 
         private void Awake()
         {
@@ -31,29 +35,43 @@ namespace SLG.Core
             {
                 endTurnButton.onClick.AddListener(EndPlayerTurn);
             }
+
+            if (waitButton != null)
+            {
+                waitButton.onClick.AddListener(() => unitSelectionController?.WaitSelectedUnit());
+            }
         }
 
         private IEnumerator Start()
         {
             yield return null;
             RefreshUnits();
+            InitializeUnitHealth();
+            if (resultLabel != null)
+            {
+                resultLabel.gameObject.SetActive(false);
+            }
             BeginPlayerTurn();
         }
 
         public bool CanSelectUnit(Unit unit)
         {
-            return IsPlayerInputAllowed && unit != null && unit.Faction == UnitFaction.Player && !unit.HasActed;
+            return IsPlayerInputAllowed && unit != null && unit.IsAlive && unit.Faction == UnitFaction.Player && !unit.HasActed;
         }
 
-        public void NotifyPlayerUnitMoved(Unit unit)
+        public void NotifyPlayerUnitActionFinished(Unit unit)
         {
-            if (unit == null || unit.Faction != UnitFaction.Player)
+            if (battleEnded || unit == null || unit.Faction != UnitFaction.Player)
             {
                 return;
             }
 
-            unit.SetHasActed(true);
             unitSelectionController?.DeselectCurrentUnit();
+
+            if (CheckBattleEnd())
+            {
+                return;
+            }
 
             if (pendingEnemyTurn)
             {
@@ -67,14 +85,13 @@ namespace SLG.Core
 
         public void EndPlayerTurn()
         {
-            if (currentPhase != BattlePhase.PlayerTurn)
+            if (battleEnded || currentPhase != BattlePhase.PlayerTurn)
             {
                 return;
             }
 
-            if (unitSelectionController != null && unitSelectionController.IsUnitMoving)
+            if (unitSelectionController != null && (unitSelectionController.IsUnitMoving || unitSelectionController.HasPendingAction))
             {
-                pendingEnemyTurn = true;
                 UpdateTurnUi();
                 return;
             }
@@ -84,23 +101,35 @@ namespace SLG.Core
 
         private void BeginPlayerTurn()
         {
+            if (battleEnded)
+            {
+                return;
+            }
+
             currentPhase = BattlePhase.PlayerTurn;
             isEnemyActing = false;
             pendingEnemyTurn = false;
             RefreshUnits();
             ResetActedState(UnitFaction.Player);
             unitSelectionController?.DeselectCurrentUnit();
+            CheckBattleEnd();
             UpdateTurnUi();
         }
 
         private void StartEnemyTurn()
         {
+            if (battleEnded)
+            {
+                return;
+            }
+
             currentPhase = BattlePhase.EnemyTurn;
             isEnemyActing = true;
             pendingEnemyTurn = false;
             unitSelectionController?.DeselectCurrentUnit();
             RefreshUnits();
             ResetActedState(UnitFaction.Enemy);
+            CheckBattleEnd();
             UpdateTurnUi();
             StartCoroutine(RunEnemyTurn());
         }
@@ -110,13 +139,21 @@ namespace SLG.Core
             for (int i = 0; i < units.Count; i++)
             {
                 Unit enemy = units[i];
-                if (enemy == null || enemy.Faction != UnitFaction.Enemy || enemy.HasActed)
+                if (battleEnded || enemy == null || !enemy.IsAlive || enemy.Faction != UnitFaction.Enemy || enemy.HasActed)
                 {
                     continue;
                 }
 
                 yield return MoveEnemyUnit(enemy);
-                enemy.SetHasActed(true);
+                if (enemy.IsAlive)
+                {
+                    enemy.SetHasActed(true);
+                }
+
+                if (CheckBattleEnd())
+                {
+                    yield break;
+                }
             }
 
             BeginPlayerTurn();
@@ -124,36 +161,53 @@ namespace SLG.Core
 
         private IEnumerator MoveEnemyUnit(Unit enemy)
         {
-            if (enemy.OccupiedTile == null || IsAdjacentToPlayer(enemy.OccupiedTile))
+            if (enemy.OccupiedTile == null)
             {
                 yield break;
             }
 
-            if (!TryChooseEnemyDestination(enemy, out Tile destination) || destination == enemy.OccupiedTile)
+            Unit target = GetAdjacentAttackTarget(enemy);
+            if (target == null && TryChooseEnemyDestination(enemy, out Tile destination) && destination != enemy.OccupiedTile)
             {
-                yield break;
-            }
-
-            if (!gridSystem.Pathfinder.TryFindPath(enemy.OccupiedTile, destination, enemy, pathBuffer))
-            {
-                yield break;
-            }
-
-            bool completed = false;
-            Tile startTile = enemy.OccupiedTile;
-            destination.SetOccupyingUnit(enemy);
-            enemy.MoveAlongPath(pathBuffer, (unit, arrivedTile) =>
-            {
-                if (startTile != null && startTile != arrivedTile)
+                if (!gridSystem.Pathfinder.TryFindPath(enemy.OccupiedTile, destination, enemy, pathBuffer))
                 {
-                    startTile.SetOccupyingUnit(null);
+                    yield break;
                 }
 
-                arrivedTile.SetOccupyingUnit(unit);
-                completed = true;
+                bool completed = false;
+                Tile startTile = enemy.OccupiedTile;
+                destination.SetOccupyingUnit(enemy);
+                enemy.MoveAlongPath(pathBuffer, (unit, arrivedTile) =>
+                {
+                    if (startTile != null && startTile != arrivedTile)
+                    {
+                        startTile.SetOccupyingUnit(null);
+                    }
+
+                    arrivedTile.SetOccupyingUnit(unit);
+                    completed = true;
+                });
+
+                while (!completed)
+                {
+                    yield return null;
+                }
+            }
+
+            target = GetAdjacentAttackTarget(enemy);
+            if (target == null)
+            {
+                yield break;
+            }
+
+            bool attackCompleted = false;
+            enemy.PlayAttack(target, () =>
+            {
+                ResolveAttack(enemy, target);
+                attackCompleted = true;
             });
 
-            while (!completed)
+            while (!attackCompleted)
             {
                 yield return null;
             }
@@ -199,7 +253,7 @@ namespace SLG.Core
             for (int i = 0; i < units.Count; i++)
             {
                 Unit player = units[i];
-                if (player == null || player.Faction != UnitFaction.Player || player.OccupiedTile == null)
+                if (player == null || !player.IsAlive || player.Faction != UnitFaction.Player || player.OccupiedTile == null)
                 {
                     continue;
                 }
@@ -273,19 +327,53 @@ namespace SLG.Core
             return candidate.X < currentBest.X;
         }
 
-        private bool IsAdjacentToPlayer(Tile tile)
+        private Unit GetAdjacentAttackTarget(Unit attacker)
         {
-            gridSystem.FillNeighbors(tile, neighborBuffer);
+            Unit bestTarget = null;
+            gridSystem.FillNeighbors(attacker.OccupiedTile, neighborBuffer);
             for (int i = 0; i < neighborBuffer.Count; i++)
             {
                 Unit occupyingUnit = neighborBuffer[i].OccupyingUnit;
-                if (occupyingUnit != null && occupyingUnit.Faction == UnitFaction.Player)
+                if (occupyingUnit == null || !occupyingUnit.IsAlive || occupyingUnit.Faction == attacker.Faction)
                 {
-                    return true;
+                    continue;
+                }
+
+                if (bestTarget == null || IsBetterAttackTarget(occupyingUnit, bestTarget))
+                {
+                    bestTarget = occupyingUnit;
                 }
             }
 
-            return false;
+            return bestTarget;
+        }
+
+        private static bool IsBetterAttackTarget(Unit candidate, Unit currentBest)
+        {
+            if (candidate.CurrentHealth != currentBest.CurrentHealth)
+            {
+                return candidate.CurrentHealth < currentBest.CurrentHealth;
+            }
+
+            if (candidate.CurrentCoordinate.Y != currentBest.CurrentCoordinate.Y)
+            {
+                return candidate.CurrentCoordinate.Y < currentBest.CurrentCoordinate.Y;
+            }
+
+            return candidate.CurrentCoordinate.X < currentBest.CurrentCoordinate.X;
+        }
+
+        public int ResolveAttack(Unit attacker, Unit defender)
+        {
+            if (battleEnded || attacker == null || defender == null || !attacker.IsAlive || !defender.IsAlive || attacker.Faction == defender.Faction)
+            {
+                return 0;
+            }
+
+            int damage = CombatResolver.CalculateDamage(attacker, defender);
+            defender.ReceiveDamage(damage);
+            CheckBattleEnd();
+            return damage;
         }
 
         private void RefreshUnits()
@@ -294,16 +382,86 @@ namespace SLG.Core
             units.AddRange(FindObjectsByType<Unit>(FindObjectsSortMode.None));
         }
 
+        private void InitializeUnitHealth()
+        {
+            for (int i = 0; i < units.Count; i++)
+            {
+                if (units[i] != null)
+                {
+                    units[i].InitializeHealthForBattle();
+                }
+            }
+        }
+
         private void ResetActedState(UnitFaction faction)
         {
             for (int i = 0; i < units.Count; i++)
             {
                 Unit unit = units[i];
-                if (unit != null && unit.Faction == faction)
+                if (unit != null && unit.IsAlive && unit.Faction == faction)
                 {
                     unit.SetHasActed(false);
                 }
             }
+        }
+
+        private bool CheckBattleEnd()
+        {
+            if (battleEnded)
+            {
+                return true;
+            }
+
+            RefreshUnits();
+            bool hasLivingPlayer = false;
+            bool hasLivingEnemy = false;
+
+            for (int i = 0; i < units.Count; i++)
+            {
+                Unit unit = units[i];
+                if (unit == null || !unit.IsAlive)
+                {
+                    continue;
+                }
+
+                hasLivingPlayer |= unit.Faction == UnitFaction.Player;
+                hasLivingEnemy |= unit.Faction == UnitFaction.Enemy;
+            }
+
+            if (!hasLivingEnemy)
+            {
+                EndBattle("Victory");
+                return true;
+            }
+
+            if (!hasLivingPlayer)
+            {
+                EndBattle("Defeat");
+                return true;
+            }
+
+            return false;
+        }
+
+        private void EndBattle(string message)
+        {
+            battleEnded = true;
+            isEnemyActing = false;
+            pendingEnemyTurn = false;
+            unitSelectionController?.DeselectCurrentUnit();
+
+            if (resultLabel != null)
+            {
+                resultLabel.text = message;
+                resultLabel.gameObject.SetActive(true);
+            }
+
+            UpdateTurnUi();
+        }
+
+        public void UpdateTurnControls()
+        {
+            UpdateTurnUi();
         }
 
         private void UpdateTurnUi()
@@ -315,8 +473,14 @@ namespace SLG.Core
 
             if (endTurnButton != null)
             {
-                endTurnButton.gameObject.SetActive(currentPhase == BattlePhase.PlayerTurn);
-                endTurnButton.interactable = IsPlayerInputAllowed && !pendingEnemyTurn;
+                endTurnButton.gameObject.SetActive(!battleEnded && currentPhase == BattlePhase.PlayerTurn);
+                endTurnButton.interactable = IsPlayerInputAllowed && !pendingEnemyTurn && (unitSelectionController == null || !unitSelectionController.HasPendingAction);
+            }
+
+            if (waitButton != null)
+            {
+                waitButton.gameObject.SetActive(!battleEnded && currentPhase == BattlePhase.PlayerTurn);
+                waitButton.interactable = IsPlayerInputAllowed && unitSelectionController != null && unitSelectionController.HasPendingAction;
             }
         }
     }

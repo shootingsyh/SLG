@@ -12,11 +12,15 @@ namespace SLG.Units
 
         private readonly List<Tile> highlightedTiles = new List<Tile>();
         private readonly HashSet<Tile> reachableTiles = new HashSet<Tile>();
+        private readonly List<Unit> highlightedAttackTargets = new List<Unit>();
         private readonly List<Tile> pathBuffer = new List<Tile>();
         private Unit selectedUnit;
         private bool isUnitMoving;
+        private bool isAttackInProgress;
+        private bool selectedUnitMoved;
 
-        public bool IsUnitMoving => isUnitMoving;
+        public bool IsUnitMoving => isUnitMoving || isAttackInProgress;
+        public bool HasPendingAction => selectedUnit != null && selectedUnitMoved && !selectedUnit.HasActed;
 
         public void InitializeUnitsOnGrid()
         {
@@ -24,6 +28,11 @@ namespace SLG.Units
             for (int i = 0; i < units.Length; i++)
             {
                 Unit unit = units[i];
+                if (!unit.gameObject.activeInHierarchy || !unit.IsAlive)
+                {
+                    continue;
+                }
+
                 if (gridSystem != null && gridSystem.TryGetTile(unit.CurrentCoordinate, out Tile tile))
                 {
                     unit.PlaceOnTile(tile);
@@ -36,14 +45,23 @@ namespace SLG.Units
 
         public void HandleUnitClicked(Unit unit)
         {
-            if (isUnitMoving || battleTurnController == null || !battleTurnController.IsPlayerInputAllowed)
+            if (IsUnitMoving || battleTurnController == null || !battleTurnController.IsPlayerInputAllowed || unit == null || !unit.IsAlive)
             {
+                return;
+            }
+
+            if (highlightedAttackTargets.Contains(unit))
+            {
+                BeginPlayerAttack(unit);
                 return;
             }
 
             if (unit == selectedUnit)
             {
-                DeselectCurrentUnit();
+                if (!selectedUnitMoved)
+                {
+                    DeselectCurrentUnit();
+                }
                 return;
             }
 
@@ -57,7 +75,7 @@ namespace SLG.Units
                 return true;
             }
 
-            if (isUnitMoving)
+            if (IsUnitMoving)
             {
                 return true;
             }
@@ -65,6 +83,11 @@ namespace SLG.Units
             if (selectedUnit == null)
             {
                 return false;
+            }
+
+            if (selectedUnitMoved)
+            {
+                return true;
             }
 
             if (!reachableTiles.Contains(tile) || tile == selectedUnit.OccupiedTile)
@@ -78,7 +101,7 @@ namespace SLG.Units
 
         public void SelectUnit(Unit unit)
         {
-            if (isUnitMoving || battleTurnController == null || !battleTurnController.CanSelectUnit(unit))
+            if (IsUnitMoving || battleTurnController == null || !battleTurnController.CanSelectUnit(unit))
             {
                 return;
             }
@@ -95,9 +118,11 @@ namespace SLG.Units
             }
 
             selectedUnit = unit;
+            selectedUnitMoved = false;
             selectedUnit.ApplySelectionState(true);
             gridSystem?.ClearSelectedTile();
             RefreshMovementRangePreview(selectedUnit);
+            RefreshAttackTargets(selectedUnit);
 
             GridCoordinate coordinate = selectedUnit.CurrentCoordinate;
             int highlightedCount = highlightedTiles.Count;
@@ -107,12 +132,14 @@ namespace SLG.Units
 
         public void DeselectCurrentUnit()
         {
-            if (isUnitMoving)
+            if (IsUnitMoving)
             {
                 return;
             }
 
             ClearMovementRangePreview();
+            ClearAttackTargets();
+            selectedUnitMoved = false;
 
             if (selectedUnit == null)
             {
@@ -121,6 +148,16 @@ namespace SLG.Units
 
             selectedUnit.ApplySelectionState(false);
             selectedUnit = null;
+        }
+
+        public void WaitSelectedUnit()
+        {
+            if (IsUnitMoving || selectedUnit == null || selectedUnit.HasActed)
+            {
+                return;
+            }
+
+            FinishSelectedUnitAction();
         }
 
         private void RefreshMovementRangePreview(Unit unit)
@@ -154,6 +191,77 @@ namespace SLG.Units
             reachableTiles.Clear();
         }
 
+        private void RefreshAttackTargets(Unit attacker)
+        {
+            ClearAttackTargets();
+
+            Unit[] units = FindObjectsByType<Unit>(FindObjectsSortMode.None);
+            for (int i = 0; i < units.Length; i++)
+            {
+                Unit target = units[i];
+                if (target == null || !target.IsAlive || target.Faction == attacker.Faction || target.OccupiedTile == null)
+                {
+                    continue;
+                }
+
+                if (GridPathfinder.GetManhattanDistance(attacker.CurrentCoordinate, target.CurrentCoordinate) <= attacker.AttackRange)
+                {
+                    target.SetAttackTargetHighlighted(true);
+                    highlightedAttackTargets.Add(target);
+                }
+            }
+        }
+
+        private void ClearAttackTargets()
+        {
+            for (int i = 0; i < highlightedAttackTargets.Count; i++)
+            {
+                if (highlightedAttackTargets[i] != null)
+                {
+                    highlightedAttackTargets[i].SetAttackTargetHighlighted(false);
+                }
+            }
+
+            highlightedAttackTargets.Clear();
+        }
+
+        private void BeginPlayerAttack(Unit target)
+        {
+            if (selectedUnit == null || target == null || !target.IsAlive)
+            {
+                return;
+            }
+
+            ClearMovementRangePreview();
+            ClearAttackTargets();
+            isAttackInProgress = true;
+            selectedUnit.PlayAttack(target, () => CompletePlayerAttack(selectedUnit, target));
+        }
+
+        private void CompletePlayerAttack(Unit attacker, Unit defender)
+        {
+            battleTurnController?.ResolveAttack(attacker, defender);
+            isAttackInProgress = false;
+            FinishSelectedUnitAction();
+        }
+
+        private void FinishSelectedUnitAction()
+        {
+            if (selectedUnit == null)
+            {
+                return;
+            }
+
+            ClearMovementRangePreview();
+            ClearAttackTargets();
+            selectedUnit.SetHasActed(true);
+            selectedUnit.ApplySelectionState(false);
+            Unit actedUnit = selectedUnit;
+            selectedUnit = null;
+            selectedUnitMoved = false;
+            battleTurnController?.NotifyPlayerUnitActionFinished(actedUnit);
+        }
+
         private void BeginMoveSelectedUnit(Tile destination)
         {
             if (gridSystem == null || gridSystem.Pathfinder == null || selectedUnit == null)
@@ -171,6 +279,7 @@ namespace SLG.Units
             Tile startTile = selectedUnit.OccupiedTile;
             destination.SetOccupyingUnit(selectedUnit);
             isUnitMoving = true;
+            ClearAttackTargets();
             selectedUnit.MoveAlongPath(pathBuffer, (unit, arrivedTile) => CompleteUnitMovement(unit, startTile, arrivedTile));
         }
 
@@ -183,11 +292,20 @@ namespace SLG.Units
 
             arrivedTile.SetOccupyingUnit(unit);
             isUnitMoving = false;
-            battleTurnController?.NotifyPlayerUnitMoved(unit);
+            selectedUnitMoved = true;
 
-            if (selectedUnit == unit)
+            if (selectedUnit == unit && !unit.HasActed)
             {
-                RefreshMovementRangePreview(unit);
+                RefreshAttackTargets(unit);
+
+                if (highlightedAttackTargets.Count == 0)
+                {
+                    FinishSelectedUnitAction();
+                }
+                else
+                {
+                    battleTurnController?.UpdateTurnControls();
+                }
             }
         }
     }
