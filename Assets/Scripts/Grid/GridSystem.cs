@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using SLG.Core;
 using SLG.Units;
 using UnityEngine;
@@ -23,10 +24,15 @@ namespace SLG.Grid
 
         private Tile[,] tiles;
         private Tile selectedTile;
+        private readonly List<Tile> neighborBuffer = new List<Tile>(4);
+        private GridPathfinder pathfinder;
+        private GridReachability reachability;
 
         public int Width => width;
         public int Height => height;
         public float TileSize => tileSize;
+        public GridPathfinder Pathfinder => pathfinder;
+        public GridReachability Reachability => reachability;
 
         public Vector3 GetTileWorldPosition(GridCoordinate coordinate)
         {
@@ -37,13 +43,36 @@ namespace SLG.Grid
         private void Start()
         {
             GenerateGrid();
+            pathfinder = new GridPathfinder(this);
+            reachability = new GridReachability(this);
             unitSelectionController?.InitializeUnitsOnGrid();
         }
 
         public void HandleTileClicked(Tile tile)
         {
+            if (unitSelectionController != null && unitSelectionController.HandleTileClicked(tile))
+            {
+                return;
+            }
+
             unitSelectionController?.DeselectCurrentUnit();
             SelectTile(tile);
+        }
+
+        public IReadOnlyList<Tile> GetNeighbors(Tile tile)
+        {
+            neighborBuffer.Clear();
+
+            if (tile == null)
+            {
+                return neighborBuffer;
+            }
+
+            AddNeighbor(tile.X + 1, tile.Y);
+            AddNeighbor(tile.X - 1, tile.Y);
+            AddNeighbor(tile.X, tile.Y + 1);
+            AddNeighbor(tile.X, tile.Y - 1);
+            return neighborBuffer;
         }
 
         public void SelectTile(Tile tile)
@@ -89,6 +118,14 @@ namespace SLG.Grid
         public bool IsValidCoordinate(GridCoordinate coordinate)
         {
             return coordinate.X >= 0 && coordinate.X < width && coordinate.Y >= 0 && coordinate.Y < height;
+        }
+
+        private void AddNeighbor(int x, int y)
+        {
+            if (TryGetTile(new GridCoordinate(x, y), out Tile tile))
+            {
+                neighborBuffer.Add(tile);
+            }
         }
 
         private void GenerateGrid()

@@ -10,7 +10,10 @@ namespace SLG.Units
         [SerializeField] private GridSystem gridSystem;
 
         private readonly List<Tile> highlightedTiles = new List<Tile>();
+        private readonly HashSet<Tile> reachableTiles = new HashSet<Tile>();
+        private readonly List<Tile> pathBuffer = new List<Tile>();
         private Unit selectedUnit;
+        private bool isUnitMoving;
 
         public void InitializeUnitsOnGrid()
         {
@@ -24,11 +27,54 @@ namespace SLG.Units
                 }
 
                 unit.Initialize(this, unit.CurrentCoordinate, unit.OccupiedTile);
+                unit.OccupiedTile?.SetOccupyingUnit(unit);
             }
+        }
+
+        public void HandleUnitClicked(Unit unit)
+        {
+            if (isUnitMoving)
+            {
+                return;
+            }
+
+            if (unit == selectedUnit)
+            {
+                DeselectCurrentUnit();
+                return;
+            }
+
+            SelectUnit(unit);
+        }
+
+        public bool HandleTileClicked(Tile tile)
+        {
+            if (isUnitMoving)
+            {
+                return true;
+            }
+
+            if (selectedUnit == null)
+            {
+                return false;
+            }
+
+            if (!reachableTiles.Contains(tile) || tile == selectedUnit.OccupiedTile)
+            {
+                return false;
+            }
+
+            BeginMoveSelectedUnit(tile);
+            return true;
         }
 
         public void SelectUnit(Unit unit)
         {
+            if (isUnitMoving)
+            {
+                return;
+            }
+
             if (unit == null)
             {
                 DeselectCurrentUnit();
@@ -53,6 +99,11 @@ namespace SLG.Units
 
         public void DeselectCurrentUnit()
         {
+            if (isUnitMoving)
+            {
+                return;
+            }
+
             ClearMovementRangePreview();
 
             if (selectedUnit == null)
@@ -68,31 +119,19 @@ namespace SLG.Units
         {
             ClearMovementRangePreview();
 
-            if (gridSystem == null)
+            if (gridSystem == null || gridSystem.Reachability == null)
             {
-                Debug.LogError("UnitSelectionController requires a GridSystem reference.", this);
+                Debug.LogError("UnitSelectionController requires a ready GridSystem reference.", this);
                 return;
             }
 
-            GridCoordinate origin = unit.CurrentCoordinate;
-            int range = unit.MovementRange;
+            gridSystem.Reachability.FindReachableTiles(unit.OccupiedTile, unit, unit.MovementRange, highlightedTiles);
 
-            for (int y = 0; y < gridSystem.Height; y++)
+            for (int i = 0; i < highlightedTiles.Count; i++)
             {
-                for (int x = 0; x < gridSystem.Width; x++)
-                {
-                    int distance = Mathf.Abs(x - origin.X) + Mathf.Abs(y - origin.Y);
-                    if (distance > range)
-                    {
-                        continue;
-                    }
-
-                    if (gridSystem.TryGetTile(new GridCoordinate(x, y), out Tile tile))
-                    {
-                        tile.SetMovementRangeHighlighted(true);
-                        highlightedTiles.Add(tile);
-                    }
-                }
+                Tile tile = highlightedTiles[i];
+                tile.SetMovementRangeHighlighted(true);
+                reachableTiles.Add(tile);
             }
         }
 
@@ -104,6 +143,43 @@ namespace SLG.Units
             }
 
             highlightedTiles.Clear();
+            reachableTiles.Clear();
+        }
+
+        private void BeginMoveSelectedUnit(Tile destination)
+        {
+            if (gridSystem == null || gridSystem.Pathfinder == null || selectedUnit == null)
+            {
+                return;
+            }
+
+            if (!gridSystem.Pathfinder.TryFindPath(selectedUnit.OccupiedTile, destination, selectedUnit, pathBuffer))
+            {
+                return;
+            }
+
+            ClearMovementRangePreview();
+
+            Tile startTile = selectedUnit.OccupiedTile;
+            destination.SetOccupyingUnit(selectedUnit);
+            isUnitMoving = true;
+            selectedUnit.MoveAlongPath(pathBuffer, (unit, arrivedTile) => CompleteUnitMovement(unit, startTile, arrivedTile));
+        }
+
+        private void CompleteUnitMovement(Unit unit, Tile previousTile, Tile arrivedTile)
+        {
+            if (previousTile != null && previousTile != arrivedTile)
+            {
+                previousTile.SetOccupyingUnit(null);
+            }
+
+            arrivedTile.SetOccupyingUnit(unit);
+            isUnitMoving = false;
+
+            if (selectedUnit == unit)
+            {
+                RefreshMovementRangePreview(unit);
+            }
         }
     }
 }

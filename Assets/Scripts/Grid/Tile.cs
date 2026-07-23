@@ -1,4 +1,5 @@
 using SLG.Core;
+using SLG.Units;
 using UnityEngine;
 
 namespace SLG.Grid
@@ -12,6 +13,9 @@ namespace SLG.Grid
 
         [SerializeField] private int x;
         [SerializeField] private int y;
+        [SerializeField] private bool isWalkable = true;
+        [SerializeField] private int movementCost = 1;
+        [SerializeField] private Unit occupyingUnit;
 
         private GridSystem gridSystem;
         private MeshRenderer meshRenderer;
@@ -26,6 +30,9 @@ namespace SLG.Grid
 
         public int X => x;
         public int Y => y;
+        public bool IsWalkable => isWalkable;
+        public int MovementCost => Mathf.Max(1, movementCost);
+        public Unit OccupyingUnit => occupyingUnit;
         public GridCoordinate Coordinate => new GridCoordinate(x, y);
 
         public void Initialize(GridSystem owner, GridCoordinate coordinate, Color baseColor, Color hover, Color selected, Color movementRange)
@@ -51,6 +58,26 @@ namespace SLG.Grid
         {
             isInMovementRange = highlighted;
             RefreshVisualState();
+        }
+
+        public bool CanEnter(Unit movingUnit)
+        {
+            return isWalkable && (occupyingUnit == null || occupyingUnit == movingUnit);
+        }
+
+        public void SetOccupyingUnit(Unit unit)
+        {
+            occupyingUnit = unit;
+        }
+
+        public void SetWalkable(bool walkable)
+        {
+            isWalkable = walkable;
+        }
+
+        public void SetMovementCost(int cost)
+        {
+            movementCost = Mathf.Max(1, cost);
         }
 
         private void Awake()
