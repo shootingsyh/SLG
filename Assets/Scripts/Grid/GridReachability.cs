@@ -7,6 +7,7 @@ namespace SLG.Grid
     {
         private readonly GridSystem gridSystem;
         private readonly List<Tile> frontier = new List<Tile>();
+        private readonly List<Tile> neighbors = new List<Tile>(4);
         private readonly Dictionary<Tile, int> costSoFar = new Dictionary<Tile, int>();
 
         public GridReachability(GridSystem gridSystem)
@@ -32,7 +33,7 @@ namespace SLG.Grid
             while (frontier.Count > 0)
             {
                 Tile current = RemoveLowestCostTile();
-                IReadOnlyList<Tile> neighbors = gridSystem.GetNeighbors(current);
+                gridSystem.FillNeighbors(current, neighbors);
 
                 for (int i = 0; i < neighbors.Count; i++)
                 {

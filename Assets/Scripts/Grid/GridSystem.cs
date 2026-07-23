@@ -61,18 +61,23 @@ namespace SLG.Grid
 
         public IReadOnlyList<Tile> GetNeighbors(Tile tile)
         {
-            neighborBuffer.Clear();
+            FillNeighbors(tile, neighborBuffer);
+            return neighborBuffer;
+        }
+
+        public void FillNeighbors(Tile tile, List<Tile> results)
+        {
+            results.Clear();
 
             if (tile == null)
             {
-                return neighborBuffer;
+                return;
             }
 
-            AddNeighbor(tile.X + 1, tile.Y);
-            AddNeighbor(tile.X - 1, tile.Y);
-            AddNeighbor(tile.X, tile.Y + 1);
-            AddNeighbor(tile.X, tile.Y - 1);
-            return neighborBuffer;
+            AddNeighbor(tile.X + 1, tile.Y, results);
+            AddNeighbor(tile.X - 1, tile.Y, results);
+            AddNeighbor(tile.X, tile.Y + 1, results);
+            AddNeighbor(tile.X, tile.Y - 1, results);
         }
 
         public void SelectTile(Tile tile)
@@ -120,11 +125,11 @@ namespace SLG.Grid
             return coordinate.X >= 0 && coordinate.X < width && coordinate.Y >= 0 && coordinate.Y < height;
         }
 
-        private void AddNeighbor(int x, int y)
+        private void AddNeighbor(int x, int y, List<Tile> results)
         {
             if (TryGetTile(new GridCoordinate(x, y), out Tile tile))
             {
-                neighborBuffer.Add(tile);
+                results.Add(tile);
             }
         }
 

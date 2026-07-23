@@ -11,6 +11,7 @@ namespace SLG.Grid
         private readonly HashSet<Tile> closedSet = new HashSet<Tile>();
         private readonly Dictionary<Tile, Tile> cameFrom = new Dictionary<Tile, Tile>();
         private readonly Dictionary<Tile, int> gScore = new Dictionary<Tile, int>();
+        private readonly List<Tile> neighbors = new List<Tile>(4);
 
         public GridPathfinder(GridSystem gridSystem)
         {
@@ -47,7 +48,7 @@ namespace SLG.Grid
                 openSet.Remove(current);
                 closedSet.Add(current);
 
-                IReadOnlyList<Tile> neighbors = gridSystem.GetNeighbors(current);
+                gridSystem.FillNeighbors(current, neighbors);
                 for (int i = 0; i < neighbors.Count; i++)
                 {
                     Tile neighbor = neighbors[i];

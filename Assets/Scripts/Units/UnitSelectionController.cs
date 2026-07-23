@@ -8,12 +8,15 @@ namespace SLG.Units
     public sealed class UnitSelectionController : MonoBehaviour
     {
         [SerializeField] private GridSystem gridSystem;
+        [SerializeField] private BattleTurnController battleTurnController;
 
         private readonly List<Tile> highlightedTiles = new List<Tile>();
         private readonly HashSet<Tile> reachableTiles = new HashSet<Tile>();
         private readonly List<Tile> pathBuffer = new List<Tile>();
         private Unit selectedUnit;
         private bool isUnitMoving;
+
+        public bool IsUnitMoving => isUnitMoving;
 
         public void InitializeUnitsOnGrid()
         {
@@ -33,7 +36,7 @@ namespace SLG.Units
 
         public void HandleUnitClicked(Unit unit)
         {
-            if (isUnitMoving)
+            if (isUnitMoving || battleTurnController == null || !battleTurnController.IsPlayerInputAllowed)
             {
                 return;
             }
@@ -49,6 +52,11 @@ namespace SLG.Units
 
         public bool HandleTileClicked(Tile tile)
         {
+            if (battleTurnController != null && !battleTurnController.IsPlayerInputAllowed)
+            {
+                return true;
+            }
+
             if (isUnitMoving)
             {
                 return true;
@@ -70,7 +78,7 @@ namespace SLG.Units
 
         public void SelectUnit(Unit unit)
         {
-            if (isUnitMoving)
+            if (isUnitMoving || battleTurnController == null || !battleTurnController.CanSelectUnit(unit))
             {
                 return;
             }
@@ -175,6 +183,7 @@ namespace SLG.Units
 
             arrivedTile.SetOccupyingUnit(unit);
             isUnitMoving = false;
+            battleTurnController?.NotifyPlayerUnitMoved(unit);
 
             if (selectedUnit == unit)
             {

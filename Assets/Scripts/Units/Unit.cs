@@ -15,25 +15,32 @@ namespace SLG.Units
         private static readonly int ColorId = Shader.PropertyToID("_Color");
 
         [SerializeField] private string displayName = "Unit";
+        [SerializeField] private UnitFaction faction = UnitFaction.Player;
         [SerializeField] private GridCoordinate currentCoordinate;
         [SerializeField] private int movementRange = 3;
         [SerializeField] private Tile occupiedTile;
         [SerializeField] private UnitSelectionController selectionController;
         [SerializeField] private float movementSpeed = 4f;
         [SerializeField] private float tileHeightOffset = 0.55f;
-        [SerializeField] private Color normalColor = new Color(0.8f, 0.18f, 0.18f, 1f);
+        [SerializeField] private Color playerColor = new Color(0.18f, 0.38f, 0.9f, 1f);
+        [SerializeField] private Color enemyColor = new Color(0.85f, 0.18f, 0.18f, 1f);
         [SerializeField] private Color selectedColor = new Color(1f, 0.95f, 0.3f, 1f);
+        [SerializeField] private Color movingColor = new Color(0.9f, 0.7f, 1f, 1f);
+        [SerializeField] private float actedBrightness = 0.45f;
 
         private Renderer unitRenderer;
         private MaterialPropertyBlock propertyBlock;
         private bool isSelected;
         private bool isMoving;
+        private bool hasActed;
 
         public string DisplayName => displayName;
+        public UnitFaction Faction => faction;
         public GridCoordinate CurrentCoordinate => currentCoordinate;
         public int MovementRange => movementRange;
         public Tile OccupiedTile => occupiedTile;
         public bool IsMoving => isMoving;
+        public bool HasActed => hasActed;
 
         public void Initialize(UnitSelectionController controller, GridCoordinate coordinate, Tile tile)
         {
@@ -69,13 +76,19 @@ namespace SLG.Units
         public void ApplySelectionState(bool selected)
         {
             isSelected = selected;
-            ApplyColor(isSelected ? selectedColor : normalColor);
+            RefreshVisualState();
+        }
+
+        public void SetHasActed(bool acted)
+        {
+            hasActed = acted;
+            RefreshVisualState();
         }
 
         private void Awake()
         {
             CacheRenderer();
-            ApplySelectionState(isSelected);
+            RefreshVisualState();
         }
 
         private void OnMouseDown()
@@ -86,6 +99,7 @@ namespace SLG.Units
         private IEnumerator MoveAlongPathRoutine(IReadOnlyList<Tile> path, Action<Unit, Tile> completed)
         {
             isMoving = true;
+            RefreshVisualState();
             Tile destination = path[path.Count - 1];
 
             for (int i = 1; i < path.Count; i++)
@@ -109,6 +123,7 @@ namespace SLG.Units
             occupiedTile = destination;
             currentCoordinate = destination.Coordinate;
             isMoving = false;
+            RefreshVisualState();
             completed?.Invoke(this, destination);
         }
 
@@ -143,6 +158,30 @@ namespace SLG.Units
             propertyBlock.SetColor(BaseColorId, color);
             propertyBlock.SetColor(ColorId, color);
             unitRenderer.SetPropertyBlock(propertyBlock);
+        }
+
+        private void RefreshVisualState()
+        {
+            if (isMoving)
+            {
+                ApplyColor(movingColor);
+                return;
+            }
+
+            if (isSelected)
+            {
+                ApplyColor(selectedColor);
+                return;
+            }
+
+            Color color = faction == UnitFaction.Player ? playerColor : enemyColor;
+            if (hasActed)
+            {
+                color *= Mathf.Clamp01(actedBrightness);
+                color.a = 1f;
+            }
+
+            ApplyColor(color);
         }
     }
 }
