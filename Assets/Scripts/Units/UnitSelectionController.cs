@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using SLG.Core;
 using SLG.Grid;
@@ -15,6 +16,7 @@ namespace SLG.Units
         private readonly List<Unit> highlightedAttackTargets = new List<Unit>();
         private readonly List<Tile> pathBuffer = new List<Tile>();
         private Unit selectedUnit;
+        private Unit previewTarget;
         private bool isUnitMoving;
         private bool isAttackInProgress;
         private bool selectedUnitMoved;
@@ -24,7 +26,7 @@ namespace SLG.Units
 
         public void InitializeUnitsOnGrid()
         {
-            Unit[] units = FindObjectsByType<Unit>(FindObjectsSortMode.None);
+            Unit[] units = FindObjectsByType<Unit>(FindObjectsInactive.Exclude);
             for (int i = 0; i < units.Length; i++)
             {
                 Unit unit = units[i];
@@ -99,6 +101,36 @@ namespace SLG.Units
             return true;
         }
 
+        public void HandleUnitHoverEntered(Unit unit)
+        {
+            if (IsUnitMoving || battleTurnController == null || unit == null || !highlightedAttackTargets.Contains(unit))
+            {
+                return;
+            }
+
+            ShowPlayerAttackPreview(unit);
+        }
+
+        public void HandleUnitHoverExited(Unit unit)
+        {
+            if (unit == null || unit != previewTarget)
+            {
+                return;
+            }
+
+            ClearCombatPreview();
+        }
+
+        public void HandleUnitHoverStayed(Unit unit)
+        {
+            if (unit == null || unit != previewTarget)
+            {
+                return;
+            }
+
+            battleTurnController?.UpdateCombatPreviewPosition();
+        }
+
         public void SelectUnit(Unit unit)
         {
             if (IsUnitMoving || battleTurnController == null || !battleTurnController.CanSelectUnit(unit))
@@ -139,6 +171,7 @@ namespace SLG.Units
 
             ClearMovementRangePreview();
             ClearAttackTargets();
+            ClearCombatPreview();
             selectedUnitMoved = false;
 
             if (selectedUnit == null)
@@ -195,7 +228,7 @@ namespace SLG.Units
         {
             ClearAttackTargets();
 
-            Unit[] units = FindObjectsByType<Unit>(FindObjectsSortMode.None);
+            Unit[] units = FindObjectsByType<Unit>(FindObjectsInactive.Exclude);
             for (int i = 0; i < units.Length; i++)
             {
                 Unit target = units[i];
@@ -204,7 +237,7 @@ namespace SLG.Units
                     continue;
                 }
 
-                if (GridPathfinder.GetManhattanDistance(attacker.CurrentCoordinate, target.CurrentCoordinate) <= attacker.AttackRange)
+                if (CombatResolver.CanAttack(attacker, target))
                 {
                     target.SetAttackTargetHighlighted(true);
                     highlightedAttackTargets.Add(target);
@@ -225,22 +258,49 @@ namespace SLG.Units
             highlightedAttackTargets.Clear();
         }
 
+        private void ShowPlayerAttackPreview(Unit target)
+        {
+            if (battleTurnController == null || selectedUnit == null || target == null || !CombatResolver.CanAttack(selectedUnit, target))
+            {
+                return;
+            }
+
+            ClearCombatPreview();
+            previewTarget = target;
+            previewTarget.SetCombatPreviewHighlighted(true);
+            CombatPreview preview = CombatResolver.BuildPreview(selectedUnit, target);
+            battleTurnController.ShowCombatPreview(preview);
+            battleTurnController?.UpdateTurnControls();
+        }
+
+        private void ClearCombatPreview()
+        {
+            if (previewTarget != null)
+            {
+                previewTarget.SetCombatPreviewHighlighted(false);
+                previewTarget = null;
+            }
+
+            battleTurnController?.HideCombatPreview();
+        }
+
         private void BeginPlayerAttack(Unit target)
         {
-            if (selectedUnit == null || target == null || !target.IsAlive)
+            if (battleTurnController == null || selectedUnit == null || target == null || !CombatResolver.CanAttack(selectedUnit, target))
             {
                 return;
             }
 
             ClearMovementRangePreview();
             ClearAttackTargets();
+            ClearCombatPreview();
             isAttackInProgress = true;
-            selectedUnit.PlayAttack(target, () => CompletePlayerAttack(selectedUnit, target));
+            StartCoroutine(CompletePlayerCombatRoutine(selectedUnit, target));
         }
 
-        private void CompletePlayerAttack(Unit attacker, Unit defender)
+        private IEnumerator CompletePlayerCombatRoutine(Unit attacker, Unit defender)
         {
-            battleTurnController?.ResolveAttack(attacker, defender);
+            yield return battleTurnController.ResolveCombatExchange(attacker, defender);
             isAttackInProgress = false;
             FinishSelectedUnitAction();
         }
@@ -254,6 +314,7 @@ namespace SLG.Units
 
             ClearMovementRangePreview();
             ClearAttackTargets();
+            ClearCombatPreview();
             selectedUnit.SetHasActed(true);
             selectedUnit.ApplySelectionState(false);
             Unit actedUnit = selectedUnit;
@@ -275,6 +336,7 @@ namespace SLG.Units
             }
 
             ClearMovementRangePreview();
+            ClearCombatPreview();
 
             Tile startTile = selectedUnit.OccupiedTile;
             destination.SetOccupyingUnit(selectedUnit);

@@ -1,8 +1,12 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using SLG.Grid;
 using SLG.Units;
 using UnityEngine;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 using UnityEngine.UI;
 
 namespace SLG.Core
@@ -15,15 +19,17 @@ namespace SLG.Core
         [SerializeField] private Text resultLabel;
         [SerializeField] private Button endTurnButton;
         [SerializeField] private Button waitButton;
+        [SerializeField] private GameObject combatPreviewPanel;
+        [SerializeField] private Text combatPreviewText;
 
         private readonly List<Unit> units = new List<Unit>();
         private readonly List<Tile> reachableTiles = new List<Tile>();
         private readonly List<Tile> pathBuffer = new List<Tile>();
-        private readonly List<Tile> neighborBuffer = new List<Tile>(4);
         private BattlePhase currentPhase = BattlePhase.PlayerTurn;
         private bool isEnemyActing;
         private bool pendingEnemyTurn;
         private bool battleEnded;
+        private bool combatPreviewFollowsMouse;
 
         public BattlePhase CurrentPhase => currentPhase;
         public bool IsBattleEnded => battleEnded;
@@ -31,6 +37,8 @@ namespace SLG.Core
 
         private void Awake()
         {
+            EnsureCombatPreviewUi();
+
             if (endTurnButton != null)
             {
                 endTurnButton.onClick.AddListener(EndPlayerTurn);
@@ -51,6 +59,8 @@ namespace SLG.Core
             {
                 resultLabel.gameObject.SetActive(false);
             }
+
+            HideCombatPreview();
             BeginPlayerTurn();
         }
 
@@ -166,7 +176,7 @@ namespace SLG.Core
                 yield break;
             }
 
-            Unit target = GetAdjacentAttackTarget(enemy);
+            Unit target = GetAttackTarget(enemy);
             if (target == null && TryChooseEnemyDestination(enemy, out Tile destination) && destination != enemy.OccupiedTile)
             {
                 if (!gridSystem.Pathfinder.TryFindPath(enemy.OccupiedTile, destination, enemy, pathBuffer))
@@ -194,23 +204,13 @@ namespace SLG.Core
                 }
             }
 
-            target = GetAdjacentAttackTarget(enemy);
+            target = GetAttackTarget(enemy);
             if (target == null)
             {
                 yield break;
             }
 
-            bool attackCompleted = false;
-            enemy.PlayAttack(target, () =>
-            {
-                ResolveAttack(enemy, target);
-                attackCompleted = true;
-            });
-
-            while (!attackCompleted)
-            {
-                yield return null;
-            }
+            yield return ResolveCombatExchange(enemy, target);
         }
 
         private bool TryChooseEnemyDestination(Unit enemy, out Tile destination)
@@ -229,7 +229,7 @@ namespace SLG.Core
                     continue;
                 }
 
-                if (!TryGetDistanceToNearestPlayer(candidate, enemy, out int distanceToPlayer))
+                if (!TryGetRangeGapToNearestPlayer(candidate, enemy, out int distanceToPlayer))
                 {
                     continue;
                 }
@@ -246,7 +246,7 @@ namespace SLG.Core
             return destination != null;
         }
 
-        private bool TryGetDistanceToNearestPlayer(Tile fromTile, Unit movingEnemy, out int bestDistance)
+        private bool TryGetRangeGapToNearestPlayer(Tile fromTile, Unit movingEnemy, out int bestDistance)
         {
             bestDistance = int.MaxValue;
 
@@ -258,27 +258,30 @@ namespace SLG.Core
                     continue;
                 }
 
-                gridSystem.FillNeighbors(player.OccupiedTile, neighborBuffer);
-                for (int j = 0; j < neighborBuffer.Count; j++)
+                int distance = GridPathfinder.GetManhattanDistance(fromTile.Coordinate, player.CurrentCoordinate);
+                int rangeGap = GetAttackRangeGap(distance, movingEnemy);
+                if (rangeGap < bestDistance)
                 {
-                    Tile adjacentTile = neighborBuffer[j];
-                    if (!adjacentTile.CanEnter(movingEnemy))
-                    {
-                        continue;
-                    }
-
-                    if (gridSystem.Pathfinder.TryFindPath(fromTile, adjacentTile, movingEnemy, pathBuffer))
-                    {
-                        int distance = GetPathCost(pathBuffer);
-                        if (distance < bestDistance)
-                        {
-                            bestDistance = distance;
-                        }
-                    }
+                    bestDistance = rangeGap;
                 }
             }
 
             return bestDistance < int.MaxValue;
+        }
+
+        private static int GetAttackRangeGap(int distance, Unit unit)
+        {
+            if (distance < unit.MinimumAttackRange)
+            {
+                return unit.MinimumAttackRange - distance;
+            }
+
+            if (distance > unit.AttackRange)
+            {
+                return distance - unit.AttackRange;
+            }
+
+            return 0;
         }
 
         private int GetPathCost(Tile start, Tile destination, Unit movingUnit)
@@ -327,21 +330,20 @@ namespace SLG.Core
             return candidate.X < currentBest.X;
         }
 
-        private Unit GetAdjacentAttackTarget(Unit attacker)
+        private Unit GetAttackTarget(Unit attacker)
         {
             Unit bestTarget = null;
-            gridSystem.FillNeighbors(attacker.OccupiedTile, neighborBuffer);
-            for (int i = 0; i < neighborBuffer.Count; i++)
+            for (int i = 0; i < units.Count; i++)
             {
-                Unit occupyingUnit = neighborBuffer[i].OccupyingUnit;
-                if (occupyingUnit == null || !occupyingUnit.IsAlive || occupyingUnit.Faction == attacker.Faction)
+                Unit candidate = units[i];
+                if (!CombatResolver.CanAttack(attacker, candidate))
                 {
                     continue;
                 }
 
-                if (bestTarget == null || IsBetterAttackTarget(occupyingUnit, bestTarget))
+                if (bestTarget == null || IsBetterAttackTarget(candidate, bestTarget))
                 {
-                    bestTarget = occupyingUnit;
+                    bestTarget = candidate;
                 }
             }
 
@@ -365,7 +367,7 @@ namespace SLG.Core
 
         public int ResolveAttack(Unit attacker, Unit defender)
         {
-            if (battleEnded || attacker == null || defender == null || !attacker.IsAlive || !defender.IsAlive || attacker.Faction == defender.Faction)
+            if (battleEnded || !CombatResolver.CanAttack(attacker, defender))
             {
                 return 0;
             }
@@ -376,10 +378,181 @@ namespace SLG.Core
             return damage;
         }
 
+        public IEnumerator ResolveCombatExchange(Unit attacker, Unit defender)
+        {
+            if (battleEnded || !CombatResolver.CanAttack(attacker, defender))
+            {
+                yield break;
+            }
+
+            bool counterWasAvailable = CombatResolver.CanCounterAttack(defender, attacker);
+            yield return PlaySingleAttack(attacker, defender);
+
+            if (battleEnded || !counterWasAvailable || !attacker.IsAlive || !defender.IsAlive || !CombatResolver.CanAttack(defender, attacker))
+            {
+                yield break;
+            }
+
+            yield return PlaySingleAttack(defender, attacker);
+        }
+
+        public void ShowCombatPreview(CombatPreview preview)
+        {
+            EnsureCombatPreviewUi();
+            if (combatPreviewPanel == null || combatPreviewText == null)
+            {
+                return;
+            }
+
+            combatPreviewFollowsMouse = true;
+            combatPreviewPanel.SetActive(true);
+            combatPreviewText.text = FormatCombatPreview(preview);
+            PositionCombatPreviewAtMouse();
+        }
+
+        public void HideCombatPreview()
+        {
+            combatPreviewFollowsMouse = false;
+
+            if (combatPreviewPanel != null)
+            {
+                combatPreviewPanel.SetActive(false);
+            }
+        }
+
+        public void UpdateCombatPreviewPosition()
+        {
+            if (combatPreviewFollowsMouse && combatPreviewPanel != null && combatPreviewPanel.activeSelf)
+            {
+                PositionCombatPreviewAtMouse();
+            }
+        }
+
+        private IEnumerator PlaySingleAttack(Unit attacker, Unit defender)
+        {
+            bool completed = false;
+            attacker.PlayAttack(defender, () =>
+            {
+                ResolveAttack(attacker, defender);
+                completed = true;
+            });
+
+            while (!completed)
+            {
+                yield return null;
+            }
+        }
+
+        private string FormatCombatPreview(CombatPreview preview)
+        {
+            StringBuilder builder = new StringBuilder(128);
+            builder.AppendLine("Combat Preview");
+            builder.AppendLine($"{preview.Attacker.DisplayName} HP {preview.Attacker.CurrentHealth}/{preview.Attacker.MaxHealth}");
+            builder.AppendLine($"Deals {preview.AttackerDamage} damage");
+            builder.AppendLine();
+            builder.AppendLine($"{preview.Defender.DisplayName} HP {preview.Defender.CurrentHealth}/{preview.Defender.MaxHealth}");
+            builder.Append("Counter: ");
+            builder.Append(preview.CanCounter ? preview.CounterDamage.ToString() : "None");
+            return builder.ToString();
+        }
+
+        private void PositionCombatPreviewAtMouse()
+        {
+            RectTransform panelRect = combatPreviewPanel != null ? combatPreviewPanel.GetComponent<RectTransform>() : null;
+            if (panelRect == null)
+            {
+                return;
+            }
+
+            Vector2 size = panelRect.sizeDelta;
+            Vector2 position = GetPointerPosition() + new Vector2(18f, -18f);
+            position.x = Mathf.Clamp(position.x, 8f, Screen.width - size.x - 8f);
+            position.y = Mathf.Clamp(position.y, size.y + 8f, Screen.height - 8f);
+            panelRect.pivot = new Vector2(0f, 1f);
+            panelRect.position = position;
+        }
+
+        private Vector2 GetPointerPosition()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current != null)
+            {
+                return Mouse.current.position.ReadValue();
+            }
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+            return Input.mousePosition;
+#else
+            return new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+#endif
+        }
+
+        private void EnsureCombatPreviewUi()
+        {
+            if (combatPreviewPanel != null && combatPreviewText != null)
+            {
+                return;
+            }
+
+            Canvas canvas = FindAnyObjectByType<Canvas>();
+            if (canvas == null)
+            {
+                GameObject canvasObject = new GameObject("Battle UI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+                canvas = canvasObject.GetComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            }
+
+            if (combatPreviewPanel == null)
+            {
+                combatPreviewPanel = new GameObject("Combat Preview Panel", typeof(RectTransform), typeof(Image));
+                combatPreviewPanel.transform.SetParent(canvas.transform, false);
+                Image image = combatPreviewPanel.GetComponent<Image>();
+                image.color = new Color(0.05f, 0.05f, 0.05f, 0.86f);
+
+                RectTransform panelRect = combatPreviewPanel.GetComponent<RectTransform>();
+                panelRect.anchorMin = new Vector2(1f, 0f);
+                panelRect.anchorMax = new Vector2(1f, 0f);
+                panelRect.pivot = new Vector2(1f, 0f);
+                panelRect.anchoredPosition = new Vector2(-20f, 20f);
+                panelRect.sizeDelta = new Vector2(280f, 140f);
+            }
+
+            if (combatPreviewText == null)
+            {
+                combatPreviewText = CreatePreviewText("Combat Preview Text", combatPreviewPanel.transform, new Vector2(12f, -12f), new Vector2(256f, 116f));
+            }
+        }
+
+        private Text CreatePreviewText(string name, Transform parent, Vector2 anchoredPosition, Vector2 size)
+        {
+            GameObject textObject = new GameObject(name, typeof(RectTransform), typeof(Text));
+            textObject.transform.SetParent(parent, false);
+
+            RectTransform rect = textObject.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 1f);
+            rect.anchoredPosition = anchoredPosition;
+            rect.sizeDelta = size;
+
+            Text text = textObject.GetComponent<Text>();
+            text.font = GetDefaultFont();
+            text.fontSize = 16;
+            text.color = Color.white;
+            text.alignment = TextAnchor.UpperLeft;
+            return text;
+        }
+
+        private Font GetDefaultFont()
+        {
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            return font != null ? font : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        }
+
         private void RefreshUnits()
         {
             units.Clear();
-            units.AddRange(FindObjectsByType<Unit>(FindObjectsSortMode.None));
+            units.AddRange(FindObjectsByType<Unit>(FindObjectsInactive.Exclude));
         }
 
         private void InitializeUnitHealth()

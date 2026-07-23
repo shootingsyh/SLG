@@ -22,6 +22,7 @@ namespace SLG.Units
         [SerializeField] private int currentHealth;
         [SerializeField] private int attackPower = 4;
         [SerializeField] private int defense = 1;
+        [SerializeField] private int minimumAttackRange = 1;
         [SerializeField] private int attackRange = 1;
         [SerializeField] private Tile occupiedTile;
         [SerializeField] private UnitSelectionController selectionController;
@@ -32,6 +33,7 @@ namespace SLG.Units
         [SerializeField] private Color selectedColor = new Color(1f, 0.95f, 0.3f, 1f);
         [SerializeField] private Color movingColor = new Color(0.9f, 0.7f, 1f, 1f);
         [SerializeField] private Color attackTargetColor = new Color(1f, 0.45f, 0.15f, 1f);
+        [SerializeField] private Color previewTargetColor = new Color(1f, 0.85f, 0.15f, 1f);
         [SerializeField] private Color takingDamageColor = Color.white;
         [SerializeField] private float actedBrightness = 0.45f;
 
@@ -41,6 +43,7 @@ namespace SLG.Units
         private bool isMoving;
         private bool hasActed;
         private bool isAttackTarget;
+        private bool isPreviewTarget;
         private bool isTakingDamage;
         private bool isDead;
         private TextMesh healthText;
@@ -53,7 +56,8 @@ namespace SLG.Units
         public int CurrentHealth => currentHealth;
         public int AttackPower => attackPower;
         public int Defense => defense;
-        public int AttackRange => attackRange;
+        public int MinimumAttackRange => Mathf.Max(1, minimumAttackRange);
+        public int AttackRange => Mathf.Max(MinimumAttackRange, attackRange);
         public Tile OccupiedTile => occupiedTile;
         public bool IsMoving => isMoving;
         public bool HasActed => hasActed;
@@ -105,6 +109,12 @@ namespace SLG.Units
         public void SetAttackTargetHighlighted(bool highlighted)
         {
             isAttackTarget = highlighted;
+            RefreshVisualState();
+        }
+
+        public void SetCombatPreviewHighlighted(bool highlighted)
+        {
+            isPreviewTarget = highlighted;
             RefreshVisualState();
         }
 
@@ -160,6 +170,21 @@ namespace SLG.Units
         private void OnMouseDown()
         {
             selectionController?.HandleUnitClicked(this);
+        }
+
+        private void OnMouseEnter()
+        {
+            selectionController?.HandleUnitHoverEntered(this);
+        }
+
+        private void OnMouseOver()
+        {
+            selectionController?.HandleUnitHoverStayed(this);
+        }
+
+        private void OnMouseExit()
+        {
+            selectionController?.HandleUnitHoverExited(this);
         }
 
         private IEnumerator MoveAlongPathRoutine(IReadOnlyList<Tile> path, Action<Unit, Tile> completed)
@@ -298,6 +323,7 @@ namespace SLG.Units
             isSelected = false;
             isMoving = false;
             isAttackTarget = false;
+            isPreviewTarget = false;
             occupiedTile?.SetOccupyingUnit(null);
             occupiedTile = null;
             UpdateHealthDisplay();
@@ -333,6 +359,12 @@ namespace SLG.Units
             if (isMoving)
             {
                 ApplyColor(movingColor);
+                return;
+            }
+
+            if (isPreviewTarget)
+            {
+                ApplyColor(previewTargetColor);
                 return;
             }
 
