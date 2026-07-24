@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83c3d301893c99645808d10453fbd70a, type: 3}
+  m_Name: Healer
+  m_EditorClassIdentifier: SLG.Runtime::SLG.Units.UnitDefinition
+  displayName: Healer
+  archetypeName: Healer
+  description: Support skill user.
+  maxHealth: 11
+  attackPower: 3
+  defense: 1
+  minimumAttackRange: 1
+  maximumAttackRange: 1
+  movementRange: 4
+  movementProfile: 0
+  skills:
+  - {fileID: 11400000, guid: 5d6d0d6483e9d8f4bac6191f6f159f10, type: 2}
+  baseDisplayColor: {r: 0.35, g: 0.95, b: 0.6, a: 1}
+  material: {fileID: 0}

@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 48cb091b55f6e9e4baf10634b7146dea, type: 3}
+  m_Name: Heal
+  m_EditorClassIdentifier: SLG.Runtime::SLG.Skills.SkillDefinition
+  skillId: heal
+  displayName: Heal
+  description: Restore allied HP.
+  targetType: 0
+  effectType: 1
+  minimumRange: 0
+  maximumRange: 2
+  areaShape: 0
+  areaSize: 0
+  power: 4
+  canTargetSelf: 1
+  canTargetAllies: 1
+  canTargetEnemies: 0
+  canTargetEmptyGround: 0
+  allowsCounterattack: 0
+  icon: {fileID: 0}
+  previewColor: {r: 0.25, g: 0.95, b: 0.55, a: 1}

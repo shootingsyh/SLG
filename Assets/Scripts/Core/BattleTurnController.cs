@@ -418,6 +418,20 @@ namespace SLG.Core
             PositionCombatPreviewAtMouse();
         }
 
+        public void ShowSkillPreview(string previewText)
+        {
+            EnsureCombatPreviewUi();
+            if (combatPreviewPanel == null || combatPreviewText == null)
+            {
+                return;
+            }
+
+            combatPreviewFollowsMouse = true;
+            combatPreviewPanel.SetActive(true);
+            combatPreviewText.text = previewText;
+            PositionCombatPreviewAtMouse();
+        }
+
         public void HideCombatPreview()
         {
             combatPreviewFollowsMouse = false;
@@ -649,6 +663,11 @@ namespace SLG.Core
         public void UpdateTurnControls()
         {
             UpdateTurnUi();
+        }
+
+        public bool CheckBattleEndAfterSkill()
+        {
+            return CheckBattleEnd();
         }
 
         private void UpdateTurnUi()

@@ -129,7 +129,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 3358716586157520148, guid: f9bbc2935bf1c1b428747de14e0a2ba9, type: 3}
       propertyPath: m_Name
-      value: Player Knight 2
+      value: Player Mage
       objectReference: {fileID: 0}
     - target: {fileID: 6933625787033692213, guid: f9bbc2935bf1c1b428747de14e0a2ba9, type: 3}
       propertyPath: defense
@@ -153,12 +153,12 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6933625787033692213, guid: f9bbc2935bf1c1b428747de14e0a2ba9, type: 3}
       propertyPath: currentHealth
-      value: 14
+      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 6933625787033692213, guid: f9bbc2935bf1c1b428747de14e0a2ba9, type: 3}
       propertyPath: unitDefinition
       value:
-      objectReference: {fileID: 11400000, guid: c84dc06c04a4fc34d82992a2f4c189ef, type: 2}
+      objectReference: {fileID: 11400000, guid: 73d9cf795dfad7c4c8faa69a8ab2ec45, type: 2}
     - target: {fileID: 6933625787033692213, guid: f9bbc2935bf1c1b428747de14e0a2ba9, type: 3}
       propertyPath: minimumAttackRange
       value: 2
@@ -1633,7 +1633,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 3358716586157520148, guid: f9bbc2935bf1c1b428747de14e0a2ba9, type: 3}
       propertyPath: m_Name
-      value: Player Pegasus
+      value: Player Healer
       objectReference: {fileID: 0}
     - target: {fileID: 6933625787033692213, guid: f9bbc2935bf1c1b428747de14e0a2ba9, type: 3}
       propertyPath: maxHealth
@@ -1653,12 +1653,12 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6933625787033692213, guid: f9bbc2935bf1c1b428747de14e0a2ba9, type: 3}
       propertyPath: currentHealth
-      value: 10
+      value: 7
       objectReference: {fileID: 0}
     - target: {fileID: 6933625787033692213, guid: f9bbc2935bf1c1b428747de14e0a2ba9, type: 3}
       propertyPath: unitDefinition
       value:
-      objectReference: {fileID: 11400000, guid: c0eaf48850df88948aa74e53a7f7959d, type: 2}
+      objectReference: {fileID: 11400000, guid: 10e17f6e1580d7e4cbe9a01bc4649c96, type: 2}
     - target: {fileID: 6933625787033692213, guid: f9bbc2935bf1c1b428747de14e0a2ba9, type: 3}
       propertyPath: minimumAttackRange
       value: 2
@@ -1747,6 +1747,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SLG.Units.UnitSelectionController
   gridSystem: {fileID: 1084608132}
   battleTurnController: {fileID: 1582156459}
+  unitProfileController: {fileID: 0}
+  actionMenuController: {fileID: 0}
+  skillSelectionPanelController: {fileID: 0}
 --- !u!4 &1475798019
 Transform:
   m_ObjectHideFlags: 0

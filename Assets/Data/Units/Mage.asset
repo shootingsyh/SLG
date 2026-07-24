@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83c3d301893c99645808d10453fbd70a, type: 3}
+  m_Name: Mage
+  m_EditorClassIdentifier: SLG.Runtime::SLG.Units.UnitDefinition
+  displayName: Mage
+  archetypeName: Mage
+  description: Damage-focused skill user.
+  maxHealth: 12
+  attackPower: 5
+  defense: 1
+  minimumAttackRange: 1
+  maximumAttackRange: 2
+  movementRange: 4
+  movementProfile: 0
+  skills:
+  - {fileID: 11400000, guid: 84ff4721097f35d49844dbde74a0ee30, type: 2}
+  - {fileID: 11400000, guid: 527c39418290b4e43a065d5bed00ec85, type: 2}
+  baseDisplayColor: {r: 0.65, g: 0.35, b: 1, a: 1}
+  material: {fileID: 0}

@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 48cb091b55f6e9e4baf10634b7146dea, type: 3}
+  m_Name: Flame Cross
+  m_EditorClassIdentifier: SLG.Runtime::SLG.Skills.SkillDefinition
+  skillId: flame_cross
+  displayName: Flame Cross
+  description: Damage enemies in a cross.
+  targetType: 1
+  effectType: 0
+  minimumRange: 1
+  maximumRange: 3
+  areaShape: 1
+  areaSize: 1
+  power: 2
+  canTargetSelf: 0
+  canTargetAllies: 0
+  canTargetEnemies: 1
+  canTargetEmptyGround: 1
+  allowsCounterattack: 0
+  icon: {fileID: 0}
+  previewColor: {r: 1, g: 0.18, b: 0.05, a: 1}

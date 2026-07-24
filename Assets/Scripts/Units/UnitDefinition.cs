@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using SLG.Skills;
 using UnityEngine;
 
 namespace SLG.Units
@@ -24,6 +26,9 @@ namespace SLG.Units
         [SerializeField] private int movementRange = 3;
         [SerializeField] private MovementProfile movementProfile = MovementProfile.Ground;
 
+        [Header("Skills")]
+        [SerializeField] private List<SkillDefinition> skills = new List<SkillDefinition>();
+
         [Header("Display")]
         [SerializeField] private Color baseDisplayColor = Color.white;
         [SerializeField] private Material material;
@@ -38,6 +43,7 @@ namespace SLG.Units
         public int MaximumAttackRange => Mathf.Max(MinimumAttackRange, maximumAttackRange);
         public int MovementRange => Mathf.Max(1, movementRange);
         public MovementProfile MovementProfile => movementProfile;
+        public IReadOnlyList<SkillDefinition> Skills => skills;
         public Color BaseDisplayColor => baseDisplayColor;
         public Material Material => material;
 

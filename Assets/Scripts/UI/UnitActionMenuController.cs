@@ -39,15 +39,16 @@ namespace SLG.UI
             }
         }
 
-        public void Configure(UnityAction attack, UnityAction wait, UnityAction cancel)
+        public void Configure(UnityAction attack, UnityAction skills, UnityAction wait, UnityAction cancel)
         {
             EnsureUi();
             SetButtonAction(attackButton, attack);
+            SetButtonAction(skillsButton, skills);
             SetButtonAction(waitButton, wait);
             SetButtonAction(cancelButton, cancel);
         }
 
-        public void Show(Unit unit, bool canCancelSelection)
+        public void Show(Unit unit, bool canCancelSelection, bool skillsAvailable)
         {
             EnsureUi();
             if (unit == null || !unit.IsAlive || menuRoot == null)
@@ -59,6 +60,8 @@ namespace SLG.UI
             anchoredUnit = unit;
             showingAttackCancelOnly = false;
             SetActionButtonsVisible(true);
+            SetButtonEnabled(skillsButton, skillsAvailable);
+            SetButtonEnabled(itemsButton, false);
             cancelButton.gameObject.SetActive(true);
             cancelButton.interactable = canCancelSelection;
             menuRoot.gameObject.SetActive(true);
@@ -203,11 +206,26 @@ namespace SLG.UI
             skillsButton.gameObject.SetActive(visible);
             itemsButton.gameObject.SetActive(visible);
             waitButton.gameObject.SetActive(visible);
+        }
 
-            if (visible)
+        private void SetButtonEnabled(Button button, bool enabled)
+        {
+            if (button == null)
             {
-                skillsButton.interactable = false;
-                itemsButton.interactable = false;
+                return;
+            }
+
+            button.interactable = enabled;
+            Image image = button.GetComponent<Image>();
+            if (image != null)
+            {
+                image.color = enabled ? new Color(0.09f, 0.12f, 0.16f, 0.92f) : new Color(0.08f, 0.08f, 0.08f, 0.55f);
+            }
+
+            Text text = button.GetComponentInChildren<Text>();
+            if (text != null)
+            {
+                text.color = enabled ? Color.white : new Color(0.65f, 0.65f, 0.65f, 1f);
             }
         }
 

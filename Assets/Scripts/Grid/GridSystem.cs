@@ -93,16 +93,19 @@ namespace SLG.Grid
 
         public void HandleTileHoverEntered(Tile tile)
         {
+            unitSelectionController?.HandleTileHoverEntered(tile);
             terrainInfoController?.Show(tile, SelectedUnit);
         }
 
         public void HandleTileHoverStayed(Tile tile)
         {
+            unitSelectionController?.HandleTileHoverStayed(tile);
             terrainInfoController?.Show(tile, SelectedUnit);
         }
 
         public void HandleTileHoverExited(Tile tile)
         {
+            unitSelectionController?.HandleTileHoverExited(tile);
             terrainInfoController?.Hide();
         }
 
@@ -133,6 +136,34 @@ namespace SLG.Grid
 
                     int distance = GridPathfinder.GetManhattanDistance(origin, tile.Coordinate);
                     if (distance >= attacker.MinimumAttackRange && distance <= attacker.AttackRange)
+                    {
+                        results.Add(tile);
+                    }
+                }
+            }
+        }
+
+        public void FillTilesInRange(Unit unit, int minimumRange, int maximumRange, List<Tile> results)
+        {
+            results.Clear();
+            if (unit == null || unit.OccupiedTile == null || tiles == null)
+            {
+                return;
+            }
+
+            GridCoordinate origin = unit.CurrentCoordinate;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    Tile tile = tiles[x, y];
+                    if (tile == null)
+                    {
+                        continue;
+                    }
+
+                    int distance = GridPathfinder.GetManhattanDistance(origin, tile.Coordinate);
+                    if (distance >= minimumRange && distance <= maximumRange)
                     {
                         results.Add(tile);
                     }

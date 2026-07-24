@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using SLG.Core;
 using SLG.Grid;
+using SLG.Skills;
 using UnityEngine;
 
 namespace SLG.Units
@@ -73,6 +74,7 @@ namespace SLG.Units
         public int MinimumAttackRange => unitDefinition != null ? unitDefinition.MinimumAttackRange : Mathf.Max(1, fallbackMinimumAttackRange);
         public int AttackRange => unitDefinition != null ? unitDefinition.MaximumAttackRange : Mathf.Max(MinimumAttackRange, fallbackAttackRange);
         public MovementProfile MovementProfile => unitDefinition != null ? unitDefinition.MovementProfile : fallbackMovementProfile;
+        public IReadOnlyList<SkillDefinition> Skills => unitDefinition != null ? unitDefinition.Skills : System.Array.Empty<SkillDefinition>();
         public Tile OccupiedTile => occupiedTile;
         public bool IsMoving => isMoving;
         public bool HasActed => hasActed;
@@ -152,6 +154,20 @@ namespace SLG.Units
 
             Die();
             return true;
+        }
+
+        public int ReceiveHealing(int healing)
+        {
+            if (isDead || healing <= 0)
+            {
+                return 0;
+            }
+
+            int previousHealth = currentHealth;
+            currentHealth = Mathf.Min(MaxHealth, currentHealth + healing);
+            UpdateHealthDisplay();
+            RefreshVisualState();
+            return currentHealth - previousHealth;
         }
 
         public void ApplySelectionState(bool selected)

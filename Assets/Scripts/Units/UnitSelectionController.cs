@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using SLG.Core;
 using SLG.Grid;
+using SLG.Skills;
 using SLG.UI;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
@@ -18,9 +19,12 @@ namespace SLG.Units
             ChoosingMovement,
             Moving,
             ChoosingAction,
+            ChoosingSkill,
+            ChoosingSkillTarget,
             ChoosingAttackTarget,
             ReturningToOriginalTile,
             ResolvingCombat,
+            ResolvingSkill,
             BattleEnded
         }
 
@@ -28,11 +32,18 @@ namespace SLG.Units
         [SerializeField] private BattleTurnController battleTurnController;
         [SerializeField] private UnitProfileController unitProfileController;
         [SerializeField] private UnitActionMenuController actionMenuController;
+        [SerializeField] private SkillSelectionPanelController skillSelectionPanelController;
 
         private readonly List<Tile> highlightedMovementTiles = new List<Tile>();
         private readonly HashSet<Tile> reachableTiles = new HashSet<Tile>();
         private readonly List<Tile> highlightedAttackRangeTiles = new List<Tile>();
         private readonly List<Unit> highlightedAttackTargets = new List<Unit>();
+        private readonly List<Tile> highlightedSkillRangeTiles = new List<Tile>();
+        private readonly List<Tile> highlightedSkillTargetTiles = new List<Tile>();
+        private readonly List<Tile> highlightedSkillAreaTiles = new List<Tile>();
+        private readonly List<Unit> highlightedSkillAffectedUnits = new List<Unit>();
+        private readonly List<Tile> skillAreaBuffer = new List<Tile>();
+        private readonly List<Unit> skillAffectedUnitBuffer = new List<Unit>();
         private readonly List<Tile> pathBuffer = new List<Tile>();
         private readonly List<Tile> provisionalMovementPath = new List<Tile>();
         private readonly List<Tile> returnPathBuffer = new List<Tile>();
@@ -43,12 +54,14 @@ namespace SLG.Units
         private Tile originalTile;
         private Tile currentTile;
         private Unit currentAttackTarget;
+        private SkillDefinition selectedSkill;
+        private Tile currentSkillTargetTile;
         private PlayerInteractionState interactionState = PlayerInteractionState.Idle;
         private bool hasDisplacedProvisionalMove;
 
         public PlayerInteractionState CurrentInteractionState => interactionState;
         public bool IsInteractionIdle => interactionState == PlayerInteractionState.Idle;
-        public bool IsUnitMoving => interactionState == PlayerInteractionState.Moving || interactionState == PlayerInteractionState.ReturningToOriginalTile || interactionState == PlayerInteractionState.ResolvingCombat;
+        public bool IsUnitMoving => interactionState == PlayerInteractionState.Moving || interactionState == PlayerInteractionState.ReturningToOriginalTile || interactionState == PlayerInteractionState.ResolvingCombat || interactionState == PlayerInteractionState.ResolvingSkill;
         public bool HasPendingAction => interactionState != PlayerInteractionState.Idle && interactionState != PlayerInteractionState.BattleEnded;
         public Unit SelectedUnit => selectedUnit;
 
@@ -120,6 +133,9 @@ namespace SLG.Units
                         BeginPlayerAttack(unit);
                     }
                     break;
+                case PlayerInteractionState.ChoosingSkillTarget:
+                    HandleSkillTargetUnitClicked(unit);
+                    break;
             }
         }
 
@@ -137,8 +153,35 @@ namespace SLG.Units
                 case PlayerInteractionState.ChoosingMovement:
                     HandleMovementChoiceTileClicked(tile);
                     return true;
+                case PlayerInteractionState.ChoosingSkillTarget:
+                    HandleSkillTargetTileClicked(tile);
+                    return true;
                 default:
                     return true;
+            }
+        }
+
+        public void HandleTileHoverEntered(Tile tile)
+        {
+            if (interactionState == PlayerInteractionState.ChoosingSkillTarget)
+            {
+                ShowSkillTargetPreview(tile);
+            }
+        }
+
+        public void HandleTileHoverStayed(Tile tile)
+        {
+            if (interactionState == PlayerInteractionState.ChoosingSkillTarget)
+            {
+                battleTurnController?.UpdateCombatPreviewPosition();
+            }
+        }
+
+        public void HandleTileHoverExited(Tile tile)
+        {
+            if (interactionState == PlayerInteractionState.ChoosingSkillTarget && tile == currentSkillTargetTile)
+            {
+                ClearSkillHoverPreview();
             }
         }
 
@@ -151,6 +194,11 @@ namespace SLG.Units
                 ShowPlayerAttackPreview(unit);
             }
 
+            if (interactionState == PlayerInteractionState.ChoosingSkillTarget && unit != null && unit.OccupiedTile != null)
+            {
+                ShowSkillTargetPreview(unit.OccupiedTile);
+            }
+
             UpdateProfileVisibility();
         }
 
@@ -159,6 +207,11 @@ namespace SLG.Units
             if (unit != null && unit == previewTarget)
             {
                 ClearCombatPreview();
+            }
+
+            if (interactionState == PlayerInteractionState.ChoosingSkillTarget && unit != null && unit.OccupiedTile == currentSkillTargetTile)
+            {
+                ClearSkillHoverPreview();
             }
 
             if (unit != null && unit == hoveredUnit)
@@ -177,6 +230,11 @@ namespace SLG.Units
             }
 
             if (unit != null && unit == previewTarget)
+            {
+                battleTurnController?.UpdateCombatPreviewPosition();
+            }
+
+            if (interactionState == PlayerInteractionState.ChoosingSkillTarget && unit != null && unit.OccupiedTile == currentSkillTargetTile)
             {
                 battleTurnController?.UpdateCombatPreviewPosition();
             }
@@ -240,11 +298,40 @@ namespace SLG.Units
             SetInteractionState(PlayerInteractionState.ChoosingAttackTarget);
         }
 
+        public void BeginSkillSelection()
+        {
+            if (interactionState != PlayerInteractionState.ChoosingAction || selectedUnit == null || selectedUnit.HasActed || !HasUsableSkills(selectedUnit))
+            {
+                return;
+            }
+
+            selectedSkill = null;
+            SetInteractionState(PlayerInteractionState.ChoosingSkill);
+        }
+
+        public void SelectSkill(SkillDefinition skill)
+        {
+            if (interactionState != PlayerInteractionState.ChoosingSkill || selectedUnit == null || skill == null)
+            {
+                return;
+            }
+
+            selectedSkill = skill;
+            SetInteractionState(PlayerInteractionState.ChoosingSkillTarget);
+        }
+
         public void CancelCurrentAction()
         {
             switch (interactionState)
             {
                 case PlayerInteractionState.ChoosingAttackTarget:
+                    SetInteractionState(PlayerInteractionState.ChoosingAction);
+                    break;
+                case PlayerInteractionState.ChoosingSkillTarget:
+                    SetInteractionState(PlayerInteractionState.ChoosingSkill);
+                    break;
+                case PlayerInteractionState.ChoosingSkill:
+                    selectedSkill = null;
                     SetInteractionState(PlayerInteractionState.ChoosingAction);
                     break;
                 case PlayerInteractionState.ChoosingAction:
@@ -278,6 +365,17 @@ namespace SLG.Units
                 ClearAttackTargetingHighlights();
                 ClearCombatPreview();
             }
+
+            if (oldState == PlayerInteractionState.ChoosingSkillTarget)
+            {
+                ClearSkillTargetingHighlights();
+                ClearSkillHoverPreview();
+            }
+
+            if (oldState == PlayerInteractionState.ChoosingSkill)
+            {
+                skillSelectionPanelController?.Hide();
+            }
         }
 
         private void EnterState(PlayerInteractionState newState)
@@ -300,21 +398,45 @@ namespace SLG.Units
                 case PlayerInteractionState.Moving:
                 case PlayerInteractionState.ReturningToOriginalTile:
                 case PlayerInteractionState.ResolvingCombat:
+                case PlayerInteractionState.ResolvingSkill:
                     ClearMovementRangePreview();
                     ClearAttackTargetingHighlights();
+                    ClearSkillTargetingHighlights();
                     ClearCombatPreview();
+                    skillSelectionPanelController?.Hide();
                     actionMenuController?.Hide();
                     break;
                 case PlayerInteractionState.ChoosingAction:
                     ValidateSelectedUnitForState(newState);
                     ClearMovementRangePreview();
                     ClearAttackTargetingHighlights();
+                    ClearSkillTargetingHighlights();
                     ClearCombatPreview();
-                    actionMenuController?.Show(selectedUnit, true);
+                    skillSelectionPanelController?.Hide();
+                    actionMenuController?.Show(selectedUnit, true, HasUsableSkills(selectedUnit));
+                    break;
+                case PlayerInteractionState.ChoosingSkill:
+                    ValidateSelectedUnitForState(newState);
+                    ClearMovementRangePreview();
+                    ClearAttackTargetingHighlights();
+                    ClearSkillTargetingHighlights();
+                    ClearCombatPreview();
+                    actionMenuController?.Hide();
+                    skillSelectionPanelController?.Show(selectedUnit);
+                    break;
+                case PlayerInteractionState.ChoosingSkillTarget:
+                    ValidateSelectedUnitForState(newState);
+                    skillSelectionPanelController?.Hide();
+                    actionMenuController?.ShowAttackCancel(selectedUnit);
+                    ClearMovementRangePreview();
+                    ClearAttackTargetingHighlights();
+                    ClearCombatPreview();
+                    RefreshSkillTargetingHighlights();
                     break;
                 case PlayerInteractionState.ChoosingAttackTarget:
                     ValidateSelectedUnitForState(newState);
                     actionMenuController?.ShowAttackCancel(selectedUnit);
+                    skillSelectionPanelController?.Hide();
                     ClearMovementRangePreview();
                     ClearCombatPreview();
                     RefreshAttackRangePreview(selectedUnit);
@@ -323,8 +445,10 @@ namespace SLG.Units
                 case PlayerInteractionState.BattleEnded:
                     ClearMovementRangePreview();
                     ClearAttackTargetingHighlights();
+                    ClearSkillTargetingHighlights();
                     ClearCombatPreview();
                     actionMenuController?.Hide();
+                    skillSelectionPanelController?.Hide();
                     unitProfileController?.Hide();
                     break;
             }
@@ -524,6 +648,65 @@ namespace SLG.Units
             StartCoroutine(CompletePlayerCombatRoutine(selectedUnit, target));
         }
 
+        private void HandleSkillTargetUnitClicked(Unit unit)
+        {
+            if (selectedSkill == null || selectedSkill.TargetType != SkillTargetType.Unit || unit == null || !SkillResolver.CanTargetUnit(selectedUnit, selectedSkill, unit))
+            {
+                return;
+            }
+
+            CastSelectedSkill(unit.OccupiedTile);
+        }
+
+        private void HandleSkillTargetTileClicked(Tile tile)
+        {
+            if (selectedSkill == null || tile == null || !SkillResolver.CanTargetTile(selectedUnit, selectedSkill, tile))
+            {
+                return;
+            }
+
+            CastSelectedSkill(tile);
+        }
+
+        private void CastSelectedSkill(Tile targetTile)
+        {
+            if (selectedUnit == null || selectedSkill == null || targetTile == null)
+            {
+                return;
+            }
+
+            SkillResolver.FillAreaTiles(gridSystem, targetTile, selectedSkill, skillAreaBuffer);
+            SkillResolver.FillAffectedUnits(selectedUnit, selectedSkill, skillAreaBuffer, skillAffectedUnitBuffer);
+            if (selectedSkill.TargetType == SkillTargetType.Unit && targetTile.OccupyingUnit != null && SkillResolver.CanTargetUnit(selectedUnit, selectedSkill, targetTile.OccupyingUnit) && !skillAffectedUnitBuffer.Contains(targetTile.OccupyingUnit))
+            {
+                skillAffectedUnitBuffer.Add(targetTile.OccupyingUnit);
+            }
+
+            if (skillAffectedUnitBuffer.Count == 0)
+            {
+                return;
+            }
+
+            List<Unit> affectedUnits = new List<Unit>(skillAffectedUnitBuffer);
+            currentSkillTargetTile = targetTile;
+            SetInteractionState(PlayerInteractionState.ResolvingSkill);
+            CompleteSkill(selectedUnit, selectedSkill, affectedUnits);
+        }
+
+        private void CompleteSkill(Unit caster, SkillDefinition skill, List<Unit> affectedUnits)
+        {
+            SkillResolver.Resolve(caster, skill, affectedUnits);
+
+            if (battleTurnController != null && battleTurnController.CheckBattleEndAfterSkill())
+            {
+                ClearSelectionAndRuntimeData(true);
+                SetInteractionState(PlayerInteractionState.BattleEnded);
+                return;
+            }
+
+            CommitSelectedUnitAction();
+        }
+
         private IEnumerator CompletePlayerCombatRoutine(Unit attacker, Unit defender)
         {
             yield return battleTurnController.ResolveCombatExchange(attacker, defender);
@@ -667,6 +850,104 @@ namespace SLG.Units
             currentAttackTarget = null;
         }
 
+        private void RefreshSkillTargetingHighlights()
+        {
+            ClearSkillTargetingHighlights();
+            if (selectedUnit == null || selectedSkill == null || gridSystem == null)
+            {
+                return;
+            }
+
+            gridSystem.FillTilesInRange(selectedUnit, selectedSkill.MinimumRange, selectedSkill.MaximumRange, highlightedSkillRangeTiles);
+            for (int i = 0; i < highlightedSkillRangeTiles.Count; i++)
+            {
+                Tile tile = highlightedSkillRangeTiles[i];
+                tile.SetAttackRangeHighlighted(true);
+                if (SkillResolver.CanTargetTile(selectedUnit, selectedSkill, tile))
+                {
+                    tile.SetSkillTargetHighlighted(true);
+                    highlightedSkillTargetTiles.Add(tile);
+                }
+            }
+        }
+
+        private void ClearSkillTargetingHighlights()
+        {
+            for (int i = 0; i < highlightedSkillRangeTiles.Count; i++)
+            {
+                if (highlightedSkillRangeTiles[i] != null)
+                {
+                    highlightedSkillRangeTiles[i].SetAttackRangeHighlighted(false);
+                }
+            }
+
+            for (int i = 0; i < highlightedSkillTargetTiles.Count; i++)
+            {
+                if (highlightedSkillTargetTiles[i] != null)
+                {
+                    highlightedSkillTargetTiles[i].SetSkillTargetHighlighted(false);
+                }
+            }
+
+            ClearSkillHoverPreview();
+            highlightedSkillRangeTiles.Clear();
+            highlightedSkillTargetTiles.Clear();
+        }
+
+        private void ShowSkillTargetPreview(Tile tile)
+        {
+            if (selectedUnit == null || selectedSkill == null || tile == null || !SkillResolver.CanTargetTile(selectedUnit, selectedSkill, tile))
+            {
+                ClearSkillHoverPreview();
+                return;
+            }
+
+            ClearSkillHoverPreview();
+            currentSkillTargetTile = tile;
+            SkillResolver.FillAreaTiles(gridSystem, tile, selectedSkill, skillAreaBuffer);
+            SkillResolver.FillAffectedUnits(selectedUnit, selectedSkill, skillAreaBuffer, skillAffectedUnitBuffer);
+
+            for (int i = 0; i < skillAreaBuffer.Count; i++)
+            {
+                skillAreaBuffer[i].SetSkillAreaHighlighted(true);
+                highlightedSkillAreaTiles.Add(skillAreaBuffer[i]);
+            }
+
+            for (int i = 0; i < skillAffectedUnitBuffer.Count; i++)
+            {
+                skillAffectedUnitBuffer[i].SetCombatPreviewHighlighted(true);
+                highlightedSkillAffectedUnits.Add(skillAffectedUnitBuffer[i]);
+            }
+
+            battleTurnController?.ShowSkillPreview(SkillResolver.BuildPreview(selectedUnit, selectedSkill, tile, skillAreaBuffer, skillAffectedUnitBuffer));
+        }
+
+        private void ClearSkillHoverPreview()
+        {
+            for (int i = 0; i < highlightedSkillAreaTiles.Count; i++)
+            {
+                if (highlightedSkillAreaTiles[i] != null)
+                {
+                    highlightedSkillAreaTiles[i].SetSkillAreaHighlighted(false);
+                }
+            }
+
+            for (int i = 0; i < highlightedSkillAffectedUnits.Count; i++)
+            {
+                if (highlightedSkillAffectedUnits[i] != null)
+                {
+                    highlightedSkillAffectedUnits[i].SetCombatPreviewHighlighted(false);
+                }
+            }
+
+            highlightedSkillAreaTiles.Clear();
+            highlightedSkillAffectedUnits.Clear();
+            skillAreaBuffer.Clear();
+            skillAffectedUnitBuffer.Clear();
+            currentSkillTargetTile = null;
+            battleTurnController?.HideCombatPreview();
+        }
+
         private void ShowPlayerAttackPreview(Unit target)
         {
             if (battleTurnController == null || selectedUnit == null || target == null || !CombatResolver.CanAttack(selectedUnit, target))
@@ -698,8 +979,10 @@ namespace SLG.Units
         {
             ClearMovementRangePreview();
             ClearAttackTargetingHighlights();
+            ClearSkillTargetingHighlights();
             ClearCombatPreview();
             actionMenuController?.Hide();
+            skillSelectionPanelController?.Hide();
 
             if (selectedUnit != null)
             {
@@ -710,6 +993,8 @@ namespace SLG.Units
             originalTile = null;
             currentTile = null;
             currentAttackTarget = null;
+            selectedSkill = null;
+            currentSkillTargetTile = null;
             hasDisplacedProvisionalMove = false;
             provisionalMovementPath.Clear();
             pathBuffer.Clear();
@@ -759,6 +1044,24 @@ namespace SLG.Units
             }
 
             return true;
+        }
+
+        private static bool HasUsableSkills(Unit unit)
+        {
+            if (unit == null || unit.Skills == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < unit.Skills.Count; i++)
+            {
+                if (unit.Skills[i] != null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void UpdateProfileVisibility()
@@ -847,7 +1150,18 @@ namespace SLG.Units
                 actionMenuController = gameObject.AddComponent<UnitActionMenuController>();
             }
 
-            actionMenuController.Configure(BeginAttackTargeting, WaitSelectedUnit, CancelCurrentAction);
+            if (skillSelectionPanelController == null)
+            {
+                skillSelectionPanelController = FindAnyObjectByType<SkillSelectionPanelController>();
+            }
+
+            if (skillSelectionPanelController == null)
+            {
+                skillSelectionPanelController = gameObject.AddComponent<SkillSelectionPanelController>();
+            }
+
+            actionMenuController.Configure(BeginAttackTargeting, BeginSkillSelection, WaitSelectedUnit, CancelCurrentAction);
+            skillSelectionPanelController.Configure(SelectSkill, CancelCurrentAction);
         }
 
         private static bool WasCancelPressed()

@@ -28,18 +28,26 @@ namespace SLG.Grid
         private MeshRenderer meshRenderer;
         private MeshRenderer movementOverlayRenderer;
         private MeshRenderer attackRangeOverlayRenderer;
+        private MeshRenderer skillTargetOverlayRenderer;
+        private MeshRenderer skillAreaOverlayRenderer;
         private MaterialPropertyBlock propertyBlock;
         private MaterialPropertyBlock overlayPropertyBlock;
         private MaterialPropertyBlock attackOverlayPropertyBlock;
+        private MaterialPropertyBlock skillTargetPropertyBlock;
+        private MaterialPropertyBlock skillAreaPropertyBlock;
         private Color normalColor;
         private Color hoverColor;
         private Color selectedColor;
         private Color movementRangeColor;
         private Color attackRangeColor = new Color(0.95f, 0.2f, 0.12f, 1f);
+        private Color skillTargetColor = new Color(0.35f, 0.55f, 1f, 1f);
+        private Color skillAreaColor = new Color(0.8f, 0.25f, 1f, 1f);
         private bool isHovered;
         private bool isSelected;
         private bool isInMovementRange;
         private bool isInAttackRange;
+        private bool isSkillTarget;
+        private bool isSkillArea;
 
         public int X => x;
         public int Y => y;
@@ -90,6 +98,18 @@ namespace SLG.Grid
         public void SetAttackRangeHighlighted(bool highlighted)
         {
             isInAttackRange = highlighted;
+            RefreshVisualState();
+        }
+
+        public void SetSkillTargetHighlighted(bool highlighted)
+        {
+            isSkillTarget = highlighted;
+            RefreshVisualState();
+        }
+
+        public void SetSkillAreaHighlighted(bool highlighted)
+        {
+            isSkillArea = highlighted;
             RefreshVisualState();
         }
 
@@ -235,6 +255,40 @@ namespace SLG.Grid
             }
         }
 
+        private void SetSkillTargetOverlayVisible(bool visible)
+        {
+            if (visible && skillTargetOverlayRenderer == null)
+            {
+                skillTargetOverlayRenderer = EnsureOverlay("Skill Target Overlay", new Vector3(0f, 0.72f, 0f), new Vector3(0.56f, 0.1f, 0.56f));
+            }
+
+            if (skillTargetOverlayRenderer != null)
+            {
+                skillTargetOverlayRenderer.gameObject.SetActive(visible);
+                if (visible)
+                {
+                    ApplyOverlayColor(skillTargetOverlayRenderer, ref skillTargetPropertyBlock, skillTargetColor);
+                }
+            }
+        }
+
+        private void SetSkillAreaOverlayVisible(bool visible)
+        {
+            if (visible && skillAreaOverlayRenderer == null)
+            {
+                skillAreaOverlayRenderer = EnsureOverlay("Skill Area Overlay", new Vector3(0f, 0.76f, 0f), new Vector3(0.34f, 0.1f, 0.34f));
+            }
+
+            if (skillAreaOverlayRenderer != null)
+            {
+                skillAreaOverlayRenderer.gameObject.SetActive(visible);
+                if (visible)
+                {
+                    ApplyOverlayColor(skillAreaOverlayRenderer, ref skillAreaPropertyBlock, skillAreaColor);
+                }
+            }
+        }
+
         private MeshRenderer EnsureOverlay(string overlayName, Vector3 localPosition, Vector3 localScale)
         {
             if (!CacheRenderer())
@@ -308,6 +362,16 @@ namespace SLG.Grid
                 {
                     attackRangeOverlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
                 }
+
+                if (skillTargetOverlayRenderer != null)
+                {
+                    skillTargetOverlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
+                }
+
+                if (skillAreaOverlayRenderer != null)
+                {
+                    skillAreaOverlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
+                }
             }
 
             Vector3 localScale = transform.localScale;
@@ -320,6 +384,8 @@ namespace SLG.Grid
         {
             SetMovementOverlayVisible(isInMovementRange);
             SetAttackRangeOverlayVisible(isInAttackRange);
+            SetSkillTargetOverlayVisible(isSkillTarget);
+            SetSkillAreaOverlayVisible(isSkillArea);
 
             if (isSelected)
             {
