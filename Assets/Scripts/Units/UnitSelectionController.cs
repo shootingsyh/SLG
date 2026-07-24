@@ -2,28 +2,66 @@ using System.Collections;
 using System.Collections.Generic;
 using SLG.Core;
 using SLG.Grid;
+using SLG.UI;
 using UnityEngine;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace SLG.Units
 {
     public sealed class UnitSelectionController : MonoBehaviour
     {
+        public enum PlayerInteractionState
+        {
+            Idle,
+            ChoosingMovement,
+            Moving,
+            ChoosingAction,
+            ChoosingAttackTarget,
+            ReturningToOriginalTile,
+            ResolvingCombat,
+            BattleEnded
+        }
+
         [SerializeField] private GridSystem gridSystem;
         [SerializeField] private BattleTurnController battleTurnController;
+        [SerializeField] private UnitProfileController unitProfileController;
+        [SerializeField] private UnitActionMenuController actionMenuController;
 
-        private readonly List<Tile> highlightedTiles = new List<Tile>();
+        private readonly List<Tile> highlightedMovementTiles = new List<Tile>();
         private readonly HashSet<Tile> reachableTiles = new HashSet<Tile>();
+        private readonly List<Tile> highlightedAttackRangeTiles = new List<Tile>();
         private readonly List<Unit> highlightedAttackTargets = new List<Unit>();
         private readonly List<Tile> pathBuffer = new List<Tile>();
-        private Unit selectedUnit;
-        private Unit previewTarget;
-        private bool isUnitMoving;
-        private bool isAttackInProgress;
-        private bool selectedUnitMoved;
+        private readonly List<Tile> provisionalMovementPath = new List<Tile>();
+        private readonly List<Tile> returnPathBuffer = new List<Tile>();
 
-        public bool IsUnitMoving => isUnitMoving || isAttackInProgress;
-        public bool HasPendingAction => selectedUnit != null && selectedUnitMoved && !selectedUnit.HasActed;
+        private Unit selectedUnit;
+        private Unit hoveredUnit;
+        private Unit previewTarget;
+        private Tile originalTile;
+        private Tile currentTile;
+        private Unit currentAttackTarget;
+        private PlayerInteractionState interactionState = PlayerInteractionState.Idle;
+        private bool hasDisplacedProvisionalMove;
+
+        public PlayerInteractionState CurrentInteractionState => interactionState;
+        public bool IsInteractionIdle => interactionState == PlayerInteractionState.Idle;
+        public bool IsUnitMoving => interactionState == PlayerInteractionState.Moving || interactionState == PlayerInteractionState.ReturningToOriginalTile || interactionState == PlayerInteractionState.ResolvingCombat;
+        public bool HasPendingAction => interactionState != PlayerInteractionState.Idle && interactionState != PlayerInteractionState.BattleEnded;
         public Unit SelectedUnit => selectedUnit;
+
+        private void Awake()
+        {
+            EnsureUiControllers();
+        }
+
+        private void Update()
+        {
+            HandleKeyboardInput();
+            UpdateProfileVisibility();
+        }
 
         public void InitializeUnitsOnGrid()
         {
@@ -60,27 +98,29 @@ namespace SLG.Units
 
         public void HandleUnitClicked(Unit unit)
         {
-            if (IsUnitMoving || battleTurnController == null || !battleTurnController.IsPlayerInputAllowed || unit == null || !unit.IsAlive)
+            if (battleTurnController == null || !battleTurnController.IsPlayerInputAllowed || unit == null || !unit.IsAlive)
             {
                 return;
             }
 
-            if (highlightedAttackTargets.Contains(unit))
+            switch (interactionState)
             {
-                BeginPlayerAttack(unit);
-                return;
+                case PlayerInteractionState.Idle:
+                    SelectUnit(unit);
+                    break;
+                case PlayerInteractionState.ChoosingMovement:
+                    if (unit == selectedUnit)
+                    {
+                        ChooseStayInPlace();
+                    }
+                    break;
+                case PlayerInteractionState.ChoosingAttackTarget:
+                    if (highlightedAttackTargets.Contains(unit))
+                    {
+                        BeginPlayerAttack(unit);
+                    }
+                    break;
             }
-
-            if (unit == selectedUnit)
-            {
-                if (!selectedUnitMoved)
-                {
-                    DeselectCurrentUnit();
-                }
-                return;
-            }
-
-            SelectUnit(unit);
         }
 
         public bool HandleTileClicked(Tile tile)
@@ -90,137 +130,455 @@ namespace SLG.Units
                 return true;
             }
 
-            if (IsUnitMoving)
+            switch (interactionState)
             {
-                return true;
+                case PlayerInteractionState.Idle:
+                    return false;
+                case PlayerInteractionState.ChoosingMovement:
+                    HandleMovementChoiceTileClicked(tile);
+                    return true;
+                default:
+                    return true;
             }
-
-            if (selectedUnit == null)
-            {
-                return false;
-            }
-
-            if (selectedUnitMoved)
-            {
-                return true;
-            }
-
-            if (!reachableTiles.Contains(tile) || tile == selectedUnit.OccupiedTile)
-            {
-                return false;
-            }
-
-            BeginMoveSelectedUnit(tile);
-            return true;
         }
 
         public void HandleUnitHoverEntered(Unit unit)
         {
-            if (IsUnitMoving || battleTurnController == null || unit == null || !highlightedAttackTargets.Contains(unit))
+            hoveredUnit = unit != null && unit.IsAlive ? unit : null;
+
+            if (interactionState == PlayerInteractionState.ChoosingAttackTarget && unit != null && highlightedAttackTargets.Contains(unit))
             {
-                return;
+                ShowPlayerAttackPreview(unit);
             }
 
-            ShowPlayerAttackPreview(unit);
+            UpdateProfileVisibility();
         }
 
         public void HandleUnitHoverExited(Unit unit)
         {
-            if (unit == null || unit != previewTarget)
+            if (unit != null && unit == previewTarget)
             {
-                return;
+                ClearCombatPreview();
             }
 
-            ClearCombatPreview();
+            if (unit != null && unit == hoveredUnit)
+            {
+                hoveredUnit = null;
+            }
+
+            UpdateProfileVisibility();
         }
 
         public void HandleUnitHoverStayed(Unit unit)
         {
-            if (unit == null || unit != previewTarget)
+            if (unit != null && unit.IsAlive)
             {
-                return;
+                hoveredUnit = unit;
             }
 
-            battleTurnController?.UpdateCombatPreviewPosition();
+            if (unit != null && unit == previewTarget)
+            {
+                battleTurnController?.UpdateCombatPreviewPosition();
+            }
         }
 
         public void SelectUnit(Unit unit)
         {
-            if (IsUnitMoving || battleTurnController == null || !battleTurnController.CanSelectUnit(unit))
+            if (interactionState != PlayerInteractionState.Idle || battleTurnController == null || !battleTurnController.CanSelectUnit(unit))
             {
                 return;
-            }
-
-            if (unit == null)
-            {
-                DeselectCurrentUnit();
-                return;
-            }
-
-            if (selectedUnit != null && selectedUnit != unit)
-            {
-                selectedUnit.ApplySelectionState(false);
             }
 
             selectedUnit = unit;
-            selectedUnitMoved = false;
+            originalTile = unit.OccupiedTile;
+            currentTile = originalTile;
+            currentAttackTarget = null;
+            hasDisplacedProvisionalMove = false;
+            provisionalMovementPath.Clear();
             selectedUnit.ApplySelectionState(true);
             gridSystem?.ClearSelectedTile();
-            RefreshMovementRangePreview(selectedUnit);
-            RefreshAttackTargets(selectedUnit);
+            SetInteractionState(PlayerInteractionState.ChoosingMovement);
 
-            GridCoordinate coordinate = selectedUnit.CurrentCoordinate;
-            int highlightedCount = highlightedTiles.Count;
-            Debug.Log($"Selected Unit: {selectedUnit.DisplayName} at {coordinate}");
-            Debug.Log($"Movement Range Tiles: {highlightedCount}");
+            Debug.Log($"Selected Unit: {selectedUnit.DisplayName} at {selectedUnit.CurrentCoordinate}");
+            Debug.Log($"Movement Range Tiles: {highlightedMovementTiles.Count}");
         }
 
         public void DeselectCurrentUnit()
         {
-            if (IsUnitMoving)
+            if (interactionState == PlayerInteractionState.Moving || interactionState == PlayerInteractionState.ReturningToOriginalTile || interactionState == PlayerInteractionState.ResolvingCombat)
             {
                 return;
             }
 
-            ClearMovementRangePreview();
-            ClearAttackTargets();
-            ClearCombatPreview();
-            selectedUnitMoved = false;
+            ClearSelectionAndRuntimeData(false);
+            SetInteractionState(PlayerInteractionState.Idle);
+        }
 
-            if (selectedUnit == null)
-            {
-                return;
-            }
-
-            selectedUnit.ApplySelectionState(false);
-            selectedUnit = null;
+        public void ClearBattleUiAndSelection()
+        {
+            ClearSelectionAndRuntimeData(true);
+            SetInteractionState(PlayerInteractionState.BattleEnded);
         }
 
         public void WaitSelectedUnit()
         {
-            if (IsUnitMoving || selectedUnit == null || selectedUnit.HasActed)
+            if (interactionState != PlayerInteractionState.ChoosingAction || selectedUnit == null || selectedUnit.HasActed)
             {
                 return;
             }
 
-            FinishSelectedUnitAction();
+            CommitSelectedUnitAction();
+        }
+
+        public void BeginAttackTargeting()
+        {
+            if (interactionState != PlayerInteractionState.ChoosingAction || selectedUnit == null || selectedUnit.HasActed)
+            {
+                return;
+            }
+
+            SetInteractionState(PlayerInteractionState.ChoosingAttackTarget);
+        }
+
+        public void CancelCurrentAction()
+        {
+            switch (interactionState)
+            {
+                case PlayerInteractionState.ChoosingAttackTarget:
+                    SetInteractionState(PlayerInteractionState.ChoosingAction);
+                    break;
+                case PlayerInteractionState.ChoosingAction:
+                    BeginReturnToOriginalTile();
+                    break;
+                case PlayerInteractionState.ChoosingMovement:
+                    DeselectCurrentUnit();
+                    break;
+            }
+        }
+
+        private void SetInteractionState(PlayerInteractionState newState)
+        {
+            if (interactionState == newState)
+            {
+                ApplyStateUi(newState);
+                return;
+            }
+
+            ExitState(interactionState);
+            interactionState = newState;
+            EnterState(newState);
+            battleTurnController?.UpdateTurnControls();
+            UpdateProfileVisibility();
+        }
+
+        private void ExitState(PlayerInteractionState oldState)
+        {
+            if (oldState == PlayerInteractionState.ChoosingAttackTarget)
+            {
+                ClearAttackTargetingHighlights();
+                ClearCombatPreview();
+            }
+        }
+
+        private void EnterState(PlayerInteractionState newState)
+        {
+            switch (newState)
+            {
+                case PlayerInteractionState.Idle:
+                    ClearMovementRangePreview();
+                    ClearAttackTargetingHighlights();
+                    ClearCombatPreview();
+                    actionMenuController?.Hide();
+                    break;
+                case PlayerInteractionState.ChoosingMovement:
+                    ValidateSelectedUnitForState(newState);
+                    actionMenuController?.Hide();
+                    ClearAttackTargetingHighlights();
+                    ClearCombatPreview();
+                    RefreshMovementRangePreview(selectedUnit);
+                    break;
+                case PlayerInteractionState.Moving:
+                case PlayerInteractionState.ReturningToOriginalTile:
+                case PlayerInteractionState.ResolvingCombat:
+                    ClearMovementRangePreview();
+                    ClearAttackTargetingHighlights();
+                    ClearCombatPreview();
+                    actionMenuController?.Hide();
+                    break;
+                case PlayerInteractionState.ChoosingAction:
+                    ValidateSelectedUnitForState(newState);
+                    ClearMovementRangePreview();
+                    ClearAttackTargetingHighlights();
+                    ClearCombatPreview();
+                    actionMenuController?.Show(selectedUnit, true);
+                    break;
+                case PlayerInteractionState.ChoosingAttackTarget:
+                    ValidateSelectedUnitForState(newState);
+                    actionMenuController?.ShowAttackCancel(selectedUnit);
+                    ClearMovementRangePreview();
+                    ClearCombatPreview();
+                    RefreshAttackRangePreview(selectedUnit);
+                    RefreshAttackTargets(selectedUnit);
+                    break;
+                case PlayerInteractionState.BattleEnded:
+                    ClearMovementRangePreview();
+                    ClearAttackTargetingHighlights();
+                    ClearCombatPreview();
+                    actionMenuController?.Hide();
+                    unitProfileController?.Hide();
+                    break;
+            }
+        }
+
+        private void ApplyStateUi(PlayerInteractionState state)
+        {
+            EnterState(state);
+            battleTurnController?.UpdateTurnControls();
+            UpdateProfileVisibility();
+        }
+
+        private void HandleMovementChoiceTileClicked(Tile tile)
+        {
+            if (selectedUnit == null || tile == null)
+            {
+                return;
+            }
+
+            if (tile == selectedUnit.OccupiedTile || tile == originalTile)
+            {
+                ChooseStayInPlace();
+                return;
+            }
+
+            if (!reachableTiles.Contains(tile))
+            {
+                return;
+            }
+
+            BeginMoveSelectedUnit(tile);
+        }
+
+        private void ChooseStayInPlace()
+        {
+            if (selectedUnit == null || interactionState != PlayerInteractionState.ChoosingMovement)
+            {
+                return;
+            }
+
+            currentTile = originalTile;
+            hasDisplacedProvisionalMove = false;
+            provisionalMovementPath.Clear();
+            SetInteractionState(PlayerInteractionState.ChoosingAction);
+            Debug.Log($"{selectedUnit.DisplayName} stays at {selectedUnit.CurrentCoordinate}");
+        }
+
+        private void BeginMoveSelectedUnit(Tile destination)
+        {
+            if (gridSystem == null || gridSystem.Pathfinder == null || selectedUnit == null || destination == null || originalTile == null)
+            {
+                Debug.LogError("Cannot start movement without a selected unit, grid, destination, and original tile.", this);
+                return;
+            }
+
+            if (!destination.CanEnter(selectedUnit) || destination.OccupyingUnit != null)
+            {
+                Debug.LogWarning($"Invalid movement destination for {selectedUnit.DisplayName}: {destination.Coordinate}.", destination);
+                return;
+            }
+
+            if (!gridSystem.Pathfinder.TryFindPath(selectedUnit.OccupiedTile, destination, selectedUnit, pathBuffer))
+            {
+                Debug.LogWarning($"No valid path for {selectedUnit.DisplayName} to {destination.Coordinate}.", destination);
+                return;
+            }
+
+            provisionalMovementPath.Clear();
+            provisionalMovementPath.AddRange(pathBuffer);
+            Tile startTile = selectedUnit.OccupiedTile;
+            destination.SetOccupyingUnit(selectedUnit);
+            SetInteractionState(PlayerInteractionState.Moving);
+            selectedUnit.MoveAlongPath(provisionalMovementPath, (unit, arrivedTile) => CompleteProvisionalMovement(unit, startTile, arrivedTile));
+        }
+
+        private void CompleteProvisionalMovement(Unit unit, Tile previousTile, Tile arrivedTile)
+        {
+            if (interactionState != PlayerInteractionState.Moving || unit == null)
+            {
+                return;
+            }
+
+            if (previousTile != null && previousTile != arrivedTile)
+            {
+                previousTile.SetOccupyingUnit(null);
+            }
+
+            arrivedTile.SetOccupyingUnit(unit);
+            currentTile = arrivedTile;
+            hasDisplacedProvisionalMove = arrivedTile != originalTile;
+
+            if (!ValidateOccupancy("provisional movement complete"))
+            {
+                return;
+            }
+
+            if (selectedUnit == unit && unit.IsAlive && !unit.HasActed)
+            {
+                SetInteractionState(PlayerInteractionState.ChoosingAction);
+            }
+            else
+            {
+                ClearSelectionAndRuntimeData(false);
+                SetInteractionState(PlayerInteractionState.Idle);
+            }
+        }
+
+        private void BeginReturnToOriginalTile()
+        {
+            if (selectedUnit == null || originalTile == null)
+            {
+                Debug.LogError("Cannot return to original tile without selected unit and original tile.", this);
+                ClearSelectionAndRuntimeData(false);
+                SetInteractionState(PlayerInteractionState.Idle);
+                return;
+            }
+
+            if (originalTile.OccupyingUnit != null && originalTile.OccupyingUnit != selectedUnit)
+            {
+                Debug.LogError($"Cannot return {selectedUnit.DisplayName}; original tile {originalTile.Coordinate} is occupied by {originalTile.OccupyingUnit.DisplayName}.", originalTile.OccupyingUnit);
+                SetInteractionState(PlayerInteractionState.ChoosingAction);
+                return;
+            }
+
+            if (selectedUnit.OccupiedTile == originalTile)
+            {
+                currentTile = originalTile;
+                hasDisplacedProvisionalMove = false;
+                provisionalMovementPath.Clear();
+                SetInteractionState(PlayerInteractionState.ChoosingMovement);
+                return;
+            }
+
+            if (!TryBuildReturnPath(returnPathBuffer))
+            {
+                Debug.LogError($"Could not find a valid return path for {selectedUnit.DisplayName} to original tile {originalTile.Coordinate}.", selectedUnit);
+                SetInteractionState(PlayerInteractionState.ChoosingAction);
+                return;
+            }
+
+            Tile displacedTile = selectedUnit.OccupiedTile;
+            originalTile.SetOccupyingUnit(selectedUnit);
+            SetInteractionState(PlayerInteractionState.ReturningToOriginalTile);
+            selectedUnit.MoveAlongPath(returnPathBuffer, (unit, arrivedTile) => CompleteReturnToOriginalTile(unit, displacedTile, arrivedTile));
+        }
+
+        private bool TryBuildReturnPath(List<Tile> results)
+        {
+            results.Clear();
+
+            if (provisionalMovementPath.Count > 1 && provisionalMovementPath[0] == originalTile && provisionalMovementPath[provisionalMovementPath.Count - 1] == selectedUnit.OccupiedTile)
+            {
+                for (int i = provisionalMovementPath.Count - 1; i >= 0; i--)
+                {
+                    results.Add(provisionalMovementPath[i]);
+                }
+                return true;
+            }
+
+            return gridSystem != null && gridSystem.Pathfinder != null && gridSystem.Pathfinder.TryFindPath(selectedUnit.OccupiedTile, originalTile, selectedUnit, results);
+        }
+
+        private void CompleteReturnToOriginalTile(Unit unit, Tile displacedTile, Tile arrivedTile)
+        {
+            if (interactionState != PlayerInteractionState.ReturningToOriginalTile || unit == null)
+            {
+                return;
+            }
+
+            if (displacedTile != null && displacedTile != arrivedTile)
+            {
+                displacedTile.SetOccupyingUnit(null);
+            }
+
+            arrivedTile.SetOccupyingUnit(unit);
+            currentTile = arrivedTile;
+            hasDisplacedProvisionalMove = false;
+            provisionalMovementPath.Clear();
+
+            if (!ValidateOccupancy("rollback complete"))
+            {
+                return;
+            }
+
+            SetInteractionState(PlayerInteractionState.ChoosingMovement);
+        }
+
+        private void BeginPlayerAttack(Unit target)
+        {
+            if (interactionState != PlayerInteractionState.ChoosingAttackTarget || battleTurnController == null || selectedUnit == null || target == null || !CombatResolver.CanAttack(selectedUnit, target))
+            {
+                return;
+            }
+
+            currentAttackTarget = target;
+            SetInteractionState(PlayerInteractionState.ResolvingCombat);
+            StartCoroutine(CompletePlayerCombatRoutine(selectedUnit, target));
+        }
+
+        private IEnumerator CompletePlayerCombatRoutine(Unit attacker, Unit defender)
+        {
+            yield return battleTurnController.ResolveCombatExchange(attacker, defender);
+
+            if (battleTurnController != null && battleTurnController.IsBattleEnded)
+            {
+                ClearSelectionAndRuntimeData(true);
+                SetInteractionState(PlayerInteractionState.BattleEnded);
+                yield break;
+            }
+
+            CommitSelectedUnitAction();
+        }
+
+        private void CommitSelectedUnitAction()
+        {
+            if (selectedUnit == null)
+            {
+                Debug.LogError("Cannot commit an action without a selected unit.", this);
+                ClearSelectionAndRuntimeData(false);
+                SetInteractionState(PlayerInteractionState.Idle);
+                return;
+            }
+
+            ClearMovementRangePreview();
+            ClearAttackTargetingHighlights();
+            ClearCombatPreview();
+            actionMenuController?.Hide();
+
+            Unit actedUnit = selectedUnit;
+            if (selectedUnit.IsAlive)
+            {
+                selectedUnit.SetHasActed(true);
+                selectedUnit.ApplySelectionState(false);
+            }
+
+            ClearSelectionAndRuntimeData(false);
+            SetInteractionState(PlayerInteractionState.Idle);
+            battleTurnController?.NotifyPlayerUnitActionFinished(actedUnit);
         }
 
         private void RefreshMovementRangePreview(Unit unit)
         {
             ClearMovementRangePreview();
 
-            if (gridSystem == null || gridSystem.Reachability == null)
+            if (unit == null || gridSystem == null || gridSystem.Reachability == null)
             {
-                Debug.LogError("UnitSelectionController requires a ready GridSystem reference.", this);
                 return;
             }
 
-            gridSystem.Reachability.FindReachableTiles(unit.OccupiedTile, unit, unit.MovementRange, highlightedTiles);
+            gridSystem.Reachability.FindReachableTiles(unit.OccupiedTile, unit, unit.MovementRange, highlightedMovementTiles);
 
-            for (int i = 0; i < highlightedTiles.Count; i++)
+            for (int i = 0; i < highlightedMovementTiles.Count; i++)
             {
-                Tile tile = highlightedTiles[i];
+                Tile tile = highlightedMovementTiles[i];
                 tile.SetMovementRangeHighlighted(true);
                 reachableTiles.Add(tile);
             }
@@ -228,13 +586,44 @@ namespace SLG.Units
 
         private void ClearMovementRangePreview()
         {
-            for (int i = 0; i < highlightedTiles.Count; i++)
+            for (int i = 0; i < highlightedMovementTiles.Count; i++)
             {
-                highlightedTiles[i].SetMovementRangeHighlighted(false);
+                if (highlightedMovementTiles[i] != null)
+                {
+                    highlightedMovementTiles[i].SetMovementRangeHighlighted(false);
+                }
             }
 
-            highlightedTiles.Clear();
+            highlightedMovementTiles.Clear();
             reachableTiles.Clear();
+        }
+
+        private void RefreshAttackRangePreview(Unit attacker)
+        {
+            ClearAttackRangePreview();
+            if (gridSystem == null || attacker == null || attacker.OccupiedTile == null)
+            {
+                return;
+            }
+
+            gridSystem.FillTilesInAttackRange(attacker, highlightedAttackRangeTiles);
+            for (int i = 0; i < highlightedAttackRangeTiles.Count; i++)
+            {
+                highlightedAttackRangeTiles[i].SetAttackRangeHighlighted(true);
+            }
+        }
+
+        private void ClearAttackRangePreview()
+        {
+            for (int i = 0; i < highlightedAttackRangeTiles.Count; i++)
+            {
+                if (highlightedAttackRangeTiles[i] != null)
+                {
+                    highlightedAttackRangeTiles[i].SetAttackRangeHighlighted(false);
+                }
+            }
+
+            highlightedAttackRangeTiles.Clear();
         }
 
         private void RefreshAttackTargets(Unit attacker)
@@ -271,6 +660,13 @@ namespace SLG.Units
             highlightedAttackTargets.Clear();
         }
 
+        private void ClearAttackTargetingHighlights()
+        {
+            ClearAttackRangePreview();
+            ClearAttackTargets();
+            currentAttackTarget = null;
+        }
+
         private void ShowPlayerAttackPreview(Unit target)
         {
             if (battleTurnController == null || selectedUnit == null || target == null || !CombatResolver.CanAttack(selectedUnit, target))
@@ -283,7 +679,8 @@ namespace SLG.Units
             previewTarget.SetCombatPreviewHighlighted(true);
             CombatPreview preview = CombatResolver.BuildPreview(selectedUnit, target);
             battleTurnController.ShowCombatPreview(preview);
-            battleTurnController?.UpdateTurnControls();
+            battleTurnController.UpdateTurnControls();
+            UpdateProfileVisibility();
         }
 
         private void ClearCombatPreview()
@@ -297,91 +694,193 @@ namespace SLG.Units
             battleTurnController?.HideCombatPreview();
         }
 
-        private void BeginPlayerAttack(Unit target)
+        private void ClearSelectionAndRuntimeData(bool forceProfileHide)
         {
-            if (battleTurnController == null || selectedUnit == null || target == null || !CombatResolver.CanAttack(selectedUnit, target))
+            ClearMovementRangePreview();
+            ClearAttackTargetingHighlights();
+            ClearCombatPreview();
+            actionMenuController?.Hide();
+
+            if (selectedUnit != null)
             {
-                return;
+                selectedUnit.ApplySelectionState(false);
             }
 
-            ClearMovementRangePreview();
-            ClearAttackTargets();
-            ClearCombatPreview();
-            isAttackInProgress = true;
-            StartCoroutine(CompletePlayerCombatRoutine(selectedUnit, target));
+            selectedUnit = null;
+            originalTile = null;
+            currentTile = null;
+            currentAttackTarget = null;
+            hasDisplacedProvisionalMove = false;
+            provisionalMovementPath.Clear();
+            pathBuffer.Clear();
+            returnPathBuffer.Clear();
+
+            if (forceProfileHide)
+            {
+                unitProfileController?.Hide();
+            }
         }
 
-        private IEnumerator CompletePlayerCombatRoutine(Unit attacker, Unit defender)
+        private bool ValidateSelectedUnitForState(PlayerInteractionState state)
         {
-            yield return battleTurnController.ResolveCombatExchange(attacker, defender);
-            isAttackInProgress = false;
-            FinishSelectedUnitAction();
+            if (selectedUnit != null && selectedUnit.IsAlive)
+            {
+                return true;
+            }
+
+            Debug.LogError($"Cannot enter {state} without a living selected unit.", this);
+            return false;
         }
 
-        private void FinishSelectedUnitAction()
+        private bool ValidateOccupancy(string context)
         {
             if (selectedUnit == null)
             {
-                return;
+                return false;
             }
 
-            ClearMovementRangePreview();
-            ClearAttackTargets();
-            ClearCombatPreview();
-            selectedUnit.SetHasActed(true);
-            selectedUnit.ApplySelectionState(false);
-            Unit actedUnit = selectedUnit;
-            selectedUnit = null;
-            selectedUnitMoved = false;
-            battleTurnController?.NotifyPlayerUnitActionFinished(actedUnit);
+            Tile occupiedTile = selectedUnit.OccupiedTile;
+            if (occupiedTile == null)
+            {
+                Debug.LogError($"Occupancy validation failed after {context}: selected unit has no occupied tile.", selectedUnit);
+                return false;
+            }
+
+            if (occupiedTile.OccupyingUnit != selectedUnit)
+            {
+                Debug.LogError($"Occupancy validation failed after {context}: {occupiedTile.Coordinate} does not contain {selectedUnit.DisplayName}.", selectedUnit);
+                return false;
+            }
+
+            if (originalTile != null && originalTile != occupiedTile && originalTile.OccupyingUnit == selectedUnit)
+            {
+                Debug.LogError($"Occupancy validation failed after {context}: both original tile {originalTile.Coordinate} and current tile {occupiedTile.Coordinate} contain {selectedUnit.DisplayName}.", selectedUnit);
+                return false;
+            }
+
+            return true;
         }
 
-        private void BeginMoveSelectedUnit(Tile destination)
+        private void UpdateProfileVisibility()
         {
-            if (gridSystem == null || gridSystem.Pathfinder == null || selectedUnit == null)
+            if (unitProfileController == null)
             {
                 return;
             }
 
-            if (!gridSystem.Pathfinder.TryFindPath(selectedUnit.OccupiedTile, destination, selectedUnit, pathBuffer))
+            if (interactionState == PlayerInteractionState.BattleEnded || (battleTurnController != null && battleTurnController.IsBattleEnded))
             {
+                unitProfileController.Hide();
                 return;
             }
 
-            ClearMovementRangePreview();
-            ClearCombatPreview();
+            if (battleTurnController != null && battleTurnController.IsCombatPreviewVisible)
+            {
+                unitProfileController.Hide();
+                return;
+            }
 
-            Tile startTile = selectedUnit.OccupiedTile;
-            destination.SetOccupyingUnit(selectedUnit);
-            isUnitMoving = true;
-            ClearAttackTargets();
-            selectedUnit.MoveAlongPath(pathBuffer, (unit, arrivedTile) => CompleteUnitMovement(unit, startTile, arrivedTile));
+            if (selectedUnit != null && selectedUnit.IsAlive)
+            {
+                unitProfileController.Show(selectedUnit);
+                return;
+            }
+
+            if (hoveredUnit != null && hoveredUnit.IsAlive)
+            {
+                unitProfileController.Show(hoveredUnit);
+                return;
+            }
+
+            unitProfileController.Hide();
         }
 
-        private void CompleteUnitMovement(Unit unit, Tile previousTile, Tile arrivedTile)
+        private void HandleKeyboardInput()
         {
-            if (previousTile != null && previousTile != arrivedTile)
+            if (interactionState == PlayerInteractionState.Moving || interactionState == PlayerInteractionState.ReturningToOriginalTile || interactionState == PlayerInteractionState.ResolvingCombat || interactionState == PlayerInteractionState.BattleEnded)
             {
-                previousTile.SetOccupyingUnit(null);
+                return;
             }
 
-            arrivedTile.SetOccupyingUnit(unit);
-            isUnitMoving = false;
-            selectedUnitMoved = true;
-
-            if (selectedUnit == unit && !unit.HasActed)
+            if (WasCancelPressed())
             {
-                RefreshAttackTargets(unit);
-
-                if (highlightedAttackTargets.Count == 0)
-                {
-                    FinishSelectedUnitAction();
-                }
-                else
-                {
-                    battleTurnController?.UpdateTurnControls();
-                }
+                CancelCurrentAction();
+                return;
             }
+
+            if (interactionState != PlayerInteractionState.ChoosingAction || selectedUnit == null || selectedUnit.HasActed)
+            {
+                return;
+            }
+
+            if (WasAttackShortcutPressed())
+            {
+                BeginAttackTargeting();
+                return;
+            }
+
+            if (WasWaitShortcutPressed())
+            {
+                WaitSelectedUnit();
+            }
+        }
+
+        private void EnsureUiControllers()
+        {
+            if (unitProfileController == null)
+            {
+                unitProfileController = FindAnyObjectByType<UnitProfileController>();
+            }
+
+            if (unitProfileController == null)
+            {
+                unitProfileController = gameObject.AddComponent<UnitProfileController>();
+            }
+
+            if (actionMenuController == null)
+            {
+                actionMenuController = FindAnyObjectByType<UnitActionMenuController>();
+            }
+
+            if (actionMenuController == null)
+            {
+                actionMenuController = gameObject.AddComponent<UnitActionMenuController>();
+            }
+
+            actionMenuController.Configure(BeginAttackTargeting, WaitSelectedUnit, CancelCurrentAction);
+        }
+
+        private static bool WasCancelPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) || (Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame);
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKeyDown(KeyCode.Escape) || Input.GetMouseButtonDown(1);
+#else
+            return false;
+#endif
+        }
+
+        private static bool WasAttackShortcutPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Keyboard.current != null && (Keyboard.current.upArrowKey.wasPressedThisFrame || Keyboard.current.wKey.wasPressedThisFrame);
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W);
+#else
+            return false;
+#endif
+        }
+
+        private static bool WasWaitShortcutPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Keyboard.current != null && (Keyboard.current.downArrowKey.wasPressedThisFrame || Keyboard.current.sKey.wasPressedThisFrame);
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S);
+#else
+            return false;
+#endif
         }
     }
 }

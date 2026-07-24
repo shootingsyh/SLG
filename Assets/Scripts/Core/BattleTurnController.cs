@@ -34,6 +34,7 @@ namespace SLG.Core
         public BattlePhase CurrentPhase => currentPhase;
         public bool IsBattleEnded => battleEnded;
         public bool IsPlayerInputAllowed => !battleEnded && currentPhase == BattlePhase.PlayerTurn && !isEnemyActing && unitSelectionController != null && !unitSelectionController.IsUnitMoving;
+        public bool IsCombatPreviewVisible => combatPreviewPanel != null && combatPreviewPanel.activeSelf;
 
         private void Awake()
         {
@@ -634,7 +635,7 @@ namespace SLG.Core
             battleEnded = true;
             isEnemyActing = false;
             pendingEnemyTurn = false;
-            unitSelectionController?.DeselectCurrentUnit();
+            unitSelectionController?.ClearBattleUiAndSelection();
 
             if (resultLabel != null)
             {
@@ -665,8 +666,8 @@ namespace SLG.Core
 
             if (waitButton != null)
             {
-                waitButton.gameObject.SetActive(!battleEnded && currentPhase == BattlePhase.PlayerTurn);
-                waitButton.interactable = IsPlayerInputAllowed && unitSelectionController != null && unitSelectionController.HasPendingAction;
+                waitButton.gameObject.SetActive(false);
+                waitButton.interactable = false;
             }
         }
     }

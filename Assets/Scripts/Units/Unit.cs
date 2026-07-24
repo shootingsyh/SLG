@@ -62,6 +62,7 @@ namespace SLG.Units
 
         public UnitDefinition Definition => unitDefinition;
         public string DisplayName => unitDefinition != null ? unitDefinition.DisplayName : fallbackDisplayName;
+        public string ArchetypeName => unitDefinition != null ? unitDefinition.ArchetypeName : "Unit";
         public UnitFaction Faction => faction;
         public GridCoordinate CurrentCoordinate => currentCoordinate;
         public int MovementRange => unitDefinition != null ? unitDefinition.MovementRange : Mathf.Max(1, fallbackMovementRange);

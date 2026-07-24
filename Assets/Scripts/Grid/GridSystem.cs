@@ -112,6 +112,34 @@ namespace SLG.Grid
             return neighborBuffer;
         }
 
+        public void FillTilesInAttackRange(Unit attacker, List<Tile> results)
+        {
+            results.Clear();
+            if (attacker == null || attacker.OccupiedTile == null || tiles == null)
+            {
+                return;
+            }
+
+            GridCoordinate origin = attacker.CurrentCoordinate;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    Tile tile = tiles[x, y];
+                    if (tile == null)
+                    {
+                        continue;
+                    }
+
+                    int distance = GridPathfinder.GetManhattanDistance(origin, tile.Coordinate);
+                    if (distance >= attacker.MinimumAttackRange && distance <= attacker.AttackRange)
+                    {
+                        results.Add(tile);
+                    }
+                }
+            }
+        }
+
         public void FillNeighbors(Tile tile, List<Tile> results)
         {
             results.Clear();

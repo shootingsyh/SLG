@@ -27,15 +27,19 @@ namespace SLG.Grid
         private GridSystem gridSystem;
         private MeshRenderer meshRenderer;
         private MeshRenderer movementOverlayRenderer;
+        private MeshRenderer attackRangeOverlayRenderer;
         private MaterialPropertyBlock propertyBlock;
         private MaterialPropertyBlock overlayPropertyBlock;
+        private MaterialPropertyBlock attackOverlayPropertyBlock;
         private Color normalColor;
         private Color hoverColor;
         private Color selectedColor;
         private Color movementRangeColor;
+        private Color attackRangeColor = new Color(0.95f, 0.2f, 0.12f, 1f);
         private bool isHovered;
         private bool isSelected;
         private bool isInMovementRange;
+        private bool isInAttackRange;
 
         public int X => x;
         public int Y => y;
@@ -80,6 +84,12 @@ namespace SLG.Grid
         public void SetMovementRangeHighlighted(bool highlighted)
         {
             isInMovementRange = highlighted;
+            RefreshVisualState();
+        }
+
+        public void SetAttackRangeHighlighted(bool highlighted)
+        {
+            isInAttackRange = highlighted;
             RefreshVisualState();
         }
 
@@ -195,7 +205,7 @@ namespace SLG.Grid
         {
             if (visible && movementOverlayRenderer == null)
             {
-                EnsureMovementOverlay();
+                movementOverlayRenderer = EnsureOverlay("Movement Range Overlay", new Vector3(0f, 0.62f, 0f), new Vector3(0.72f, 0.08f, 0.72f));
             }
 
             if (movementOverlayRenderer != null)
@@ -208,52 +218,74 @@ namespace SLG.Grid
             }
         }
 
-        private void EnsureMovementOverlay()
+        private void SetAttackRangeOverlayVisible(bool visible)
+        {
+            if (visible && attackRangeOverlayRenderer == null)
+            {
+                attackRangeOverlayRenderer = EnsureOverlay("Attack Range Overlay", new Vector3(0f, 0.68f, 0f), new Vector3(0.44f, 0.1f, 0.44f));
+            }
+
+            if (attackRangeOverlayRenderer != null)
+            {
+                attackRangeOverlayRenderer.gameObject.SetActive(visible);
+                if (visible)
+                {
+                    ApplyOverlayColor(attackRangeOverlayRenderer, ref attackOverlayPropertyBlock, attackRangeColor);
+                }
+            }
+        }
+
+        private MeshRenderer EnsureOverlay(string overlayName, Vector3 localPosition, Vector3 localScale)
         {
             if (!CacheRenderer())
             {
-                return;
+                return null;
             }
 
-            Transform existing = transform.Find("Movement Range Overlay");
-            if (existing != null && existing.TryGetComponent(out movementOverlayRenderer))
+            Transform existing = transform.Find(overlayName);
+            if (existing != null && existing.TryGetComponent(out MeshRenderer existingRenderer))
             {
-                overlayPropertyBlock ??= new MaterialPropertyBlock();
-                return;
+                return existingRenderer;
             }
 
             if (!TryGetComponent(out MeshFilter sourceMeshFilter) || sourceMeshFilter.sharedMesh == null)
             {
-                return;
+                return null;
             }
 
-            GameObject overlay = new GameObject("Movement Range Overlay");
+            GameObject overlay = new GameObject(overlayName);
             overlay.transform.SetParent(transform, false);
-            overlay.transform.localPosition = new Vector3(0f, 0.62f, 0f);
+            overlay.transform.localPosition = localPosition;
             overlay.transform.localRotation = Quaternion.identity;
-            overlay.transform.localScale = new Vector3(0.72f, 0.08f, 0.72f);
+            overlay.transform.localScale = localScale;
 
             MeshFilter overlayMeshFilter = overlay.AddComponent<MeshFilter>();
             overlayMeshFilter.sharedMesh = sourceMeshFilter.sharedMesh;
 
-            movementOverlayRenderer = overlay.AddComponent<MeshRenderer>();
-            movementOverlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
-            movementOverlayRenderer.shadowCastingMode = ShadowCastingMode.Off;
-            movementOverlayRenderer.receiveShadows = false;
-            overlayPropertyBlock ??= new MaterialPropertyBlock();
+            MeshRenderer overlayRenderer = overlay.AddComponent<MeshRenderer>();
+            overlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
+            overlayRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            overlayRenderer.receiveShadows = false;
+            return overlayRenderer;
         }
 
         private void ApplyMovementOverlayColor(Color color)
         {
-            if (movementOverlayRenderer == null)
+            ApplyOverlayColor(movementOverlayRenderer, ref overlayPropertyBlock, color);
+        }
+
+        private void ApplyOverlayColor(MeshRenderer targetRenderer, ref MaterialPropertyBlock targetBlock, Color color)
+        {
+            if (targetRenderer == null)
             {
                 return;
             }
 
-            movementOverlayRenderer.GetPropertyBlock(overlayPropertyBlock);
-            overlayPropertyBlock.SetColor(BaseColorId, color);
-            overlayPropertyBlock.SetColor(ColorId, color);
-            movementOverlayRenderer.SetPropertyBlock(overlayPropertyBlock);
+            targetBlock ??= new MaterialPropertyBlock();
+            targetRenderer.GetPropertyBlock(targetBlock);
+            targetBlock.SetColor(BaseColorId, color);
+            targetBlock.SetColor(ColorId, color);
+            targetRenderer.SetPropertyBlock(targetBlock);
         }
 
         private void ApplyTerrainVisuals()
@@ -271,6 +303,11 @@ namespace SLG.Grid
                 {
                     movementOverlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
                 }
+
+                if (attackRangeOverlayRenderer != null)
+                {
+                    attackRangeOverlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
+                }
             }
 
             Vector3 localScale = transform.localScale;
@@ -282,6 +319,7 @@ namespace SLG.Grid
         private void RefreshVisualState()
         {
             SetMovementOverlayVisible(isInMovementRange);
+            SetAttackRangeOverlayVisible(isInAttackRange);
 
             if (isSelected)
             {
