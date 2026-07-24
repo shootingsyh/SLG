@@ -30,11 +30,15 @@ namespace SLG.Core
         private bool pendingEnemyTurn;
         private bool battleEnded;
         private bool combatPreviewFollowsMouse;
+        private string battleResult = string.Empty;
 
         public BattlePhase CurrentPhase => currentPhase;
         public bool IsBattleEnded => battleEnded;
+        public bool IsEnemyActing => isEnemyActing;
+        public string BattleResult => battleEnded ? battleResult : string.Empty;
         public bool IsPlayerInputAllowed => !battleEnded && currentPhase == BattlePhase.PlayerTurn && !isEnemyActing && unitSelectionController != null && !unitSelectionController.IsUnitMoving;
         public bool IsCombatPreviewVisible => combatPreviewPanel != null && combatPreviewPanel.activeSelf;
+        public IReadOnlyList<Unit> ActiveUnits => units;
 
         private void Awake()
         {
@@ -108,6 +112,33 @@ namespace SLG.Core
             }
 
             StartEnemyTurn();
+        }
+
+        public bool TryEndPlayerTurn()
+        {
+            if (battleEnded || currentPhase != BattlePhase.PlayerTurn || (unitSelectionController != null && (unitSelectionController.IsUnitMoving || unitSelectionController.HasPendingAction)))
+            {
+                return false;
+            }
+
+            EndPlayerTurn();
+            return currentPhase == BattlePhase.EnemyTurn;
+        }
+
+        public int CountLivingUnits(UnitFaction faction)
+        {
+            RefreshUnits();
+            int count = 0;
+            for (int i = 0; i < units.Count; i++)
+            {
+                Unit unit = units[i];
+                if (unit != null && unit.IsAlive && unit.Faction == faction)
+                {
+                    count++;
+                }
+            }
+
+            return count;
         }
 
         private void BeginPlayerTurn()
@@ -647,6 +678,7 @@ namespace SLG.Core
         private void EndBattle(string message)
         {
             battleEnded = true;
+            battleResult = message;
             isEnemyActing = false;
             pendingEnemyTurn = false;
             unitSelectionController?.ClearBattleUiAndSelection();

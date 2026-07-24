@@ -64,6 +64,12 @@ namespace SLG.Units
         public bool IsUnitMoving => interactionState == PlayerInteractionState.Moving || interactionState == PlayerInteractionState.ReturningToOriginalTile || interactionState == PlayerInteractionState.ResolvingCombat || interactionState == PlayerInteractionState.ResolvingSkill;
         public bool HasPendingAction => interactionState != PlayerInteractionState.Idle && interactionState != PlayerInteractionState.BattleEnded;
         public Unit SelectedUnit => selectedUnit;
+        public SkillDefinition SelectedSkill => selectedSkill;
+        public Tile OriginalTile => originalTile;
+        public Tile CurrentTile => currentTile;
+        public bool HasProvisionalMovement => hasDisplacedProvisionalMove;
+        public bool IsResolvingCombat => interactionState == PlayerInteractionState.ResolvingCombat;
+        public bool IsResolvingSkill => interactionState == PlayerInteractionState.ResolvingSkill;
 
         private void Awake()
         {
@@ -259,6 +265,118 @@ namespace SLG.Units
 
             Debug.Log($"Selected Unit: {selectedUnit.DisplayName} at {selectedUnit.CurrentCoordinate}");
             Debug.Log($"Movement Range Tiles: {highlightedMovementTiles.Count}");
+        }
+
+        public bool TrySelectUnit(Unit unit)
+        {
+            if (interactionState != PlayerInteractionState.Idle || battleTurnController == null || !battleTurnController.CanSelectUnit(unit))
+            {
+                return false;
+            }
+
+            SelectUnit(unit);
+            return selectedUnit == unit && interactionState == PlayerInteractionState.ChoosingMovement;
+        }
+
+        public bool TryChooseMovementTile(Tile tile)
+        {
+            if (interactionState != PlayerInteractionState.ChoosingMovement || selectedUnit == null || tile == null)
+            {
+                return false;
+            }
+
+            PlayerInteractionState previousState = interactionState;
+            Tile previousTile = selectedUnit.OccupiedTile;
+            HandleMovementChoiceTileClicked(tile);
+            return interactionState != previousState || selectedUnit.OccupiedTile != previousTile;
+        }
+
+        public bool TryChooseStay()
+        {
+            if (interactionState != PlayerInteractionState.ChoosingMovement || selectedUnit == null)
+            {
+                return false;
+            }
+
+            ChooseStayInPlace();
+            return interactionState == PlayerInteractionState.ChoosingAction;
+        }
+
+        public bool TryChooseAttack()
+        {
+            if (interactionState != PlayerInteractionState.ChoosingAction || selectedUnit == null || selectedUnit.HasActed)
+            {
+                return false;
+            }
+
+            BeginAttackTargeting();
+            return interactionState == PlayerInteractionState.ChoosingAttackTarget;
+        }
+
+        public bool TryOpenSkills()
+        {
+            if (interactionState != PlayerInteractionState.ChoosingAction || selectedUnit == null || selectedUnit.HasActed || !HasUsableSkills(selectedUnit))
+            {
+                return false;
+            }
+
+            BeginSkillSelection();
+            return interactionState == PlayerInteractionState.ChoosingSkill;
+        }
+
+        public bool TryChooseSkill(SkillDefinition skill)
+        {
+            if (interactionState != PlayerInteractionState.ChoosingSkill || selectedUnit == null || skill == null)
+            {
+                return false;
+            }
+
+            SelectSkill(skill);
+            return selectedSkill == skill && interactionState == PlayerInteractionState.ChoosingSkillTarget;
+        }
+
+        public bool TryChooseUnitTarget(Unit target)
+        {
+            if (interactionState != PlayerInteractionState.ChoosingAttackTarget && interactionState != PlayerInteractionState.ChoosingSkillTarget)
+            {
+                return false;
+            }
+
+            PlayerInteractionState previousState = interactionState;
+            HandleUnitClicked(target);
+            return interactionState != previousState;
+        }
+
+        public bool TryChooseGroundTarget(Tile targetTile)
+        {
+            if (interactionState != PlayerInteractionState.ChoosingSkillTarget || targetTile == null)
+            {
+                return false;
+            }
+
+            PlayerInteractionState previousState = interactionState;
+            HandleSkillTargetTileClicked(targetTile);
+            return interactionState != previousState;
+        }
+
+        public bool TryWait()
+        {
+            if (interactionState != PlayerInteractionState.ChoosingAction || selectedUnit == null || selectedUnit.HasActed)
+            {
+                return false;
+            }
+
+            Unit unit = selectedUnit;
+            WaitSelectedUnit();
+            return unit.HasActed && interactionState == PlayerInteractionState.Idle;
+        }
+
+        public bool TryCancel()
+        {
+            PlayerInteractionState previousState = interactionState;
+            Tile previousTile = selectedUnit != null ? selectedUnit.OccupiedTile : null;
+            CancelCurrentAction();
+            return interactionState != previousState || (selectedUnit != null && selectedUnit.OccupiedTile != previousTile);
         }
 
         public void DeselectCurrentUnit()

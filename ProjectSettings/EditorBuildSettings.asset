@@ -8,5 +8,23 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/SampleScene.unity
     guid: 99c9720ab356a0642a771bea13969a05
+  - enabled: 1
+    path: Assets/Scenes/Tests/Test_MovementAndTerrain.unity
+    guid: 8e933d2350f239044bd49400470d7825
+  - enabled: 1
+    path: Assets/Scenes/Tests/Test_MovementRollback.unity
+    guid: ea86a9bc647085547a4b6c4a61da86e6
+  - enabled: 1
+    path: Assets/Scenes/Tests/Test_Combat.unity
+    guid: ea7367a47f013dc48932cd40e1d354f3
+  - enabled: 1
+    path: Assets/Scenes/Tests/Test_Skills.unity
+    guid: a0c23fcac24af644f9649e55e100f6c0
+  - enabled: 1
+    path: Assets/Scenes/Tests/Test_TurnAndAI.unity
+    guid: 77adcdbce85a70041a7c371ccbb2558d
+  - enabled: 1
+    path: Assets/Scenes/Tests/Test_BattleEnd.unity
+    guid: 1c0cbcb0fe024414ab6044f99610c501
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
