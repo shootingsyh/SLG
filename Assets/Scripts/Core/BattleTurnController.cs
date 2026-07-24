@@ -291,15 +291,15 @@ namespace SLG.Core
                 return int.MaxValue;
             }
 
-            return GetPathCost(pathBuffer);
+            return GetPathCost(pathBuffer, movingUnit);
         }
 
-        private static int GetPathCost(IReadOnlyList<Tile> path)
+        private static int GetPathCost(IReadOnlyList<Tile> path, Unit movingUnit)
         {
             int cost = 0;
             for (int i = 1; i < path.Count; i++)
             {
-                cost += path[i].MovementCost;
+                cost += path[i].GetMovementCost(movingUnit);
             }
 
             return cost;
@@ -320,6 +320,13 @@ namespace SLG.Core
             if (currentBest == null)
             {
                 return true;
+            }
+
+            int candidateDefense = candidate.GetDefenseBonus(null);
+            int currentDefense = currentBest.GetDefenseBonus(null);
+            if (candidateDefense != currentDefense)
+            {
+                return candidateDefense > currentDefense;
             }
 
             if (candidate.Y != currentBest.Y)
@@ -446,13 +453,19 @@ namespace SLG.Core
         private string FormatCombatPreview(CombatPreview preview)
         {
             StringBuilder builder = new StringBuilder(128);
-            builder.AppendLine("Combat Preview");
+            string defenderTerrain = preview.Defender != null && preview.Defender.OccupiedTile != null ? preview.Defender.OccupiedTile.TerrainName : "None";
+            string attackerTerrain = preview.Attacker != null && preview.Attacker.OccupiedTile != null ? preview.Attacker.OccupiedTile.TerrainName : "None";
+
             builder.AppendLine($"{preview.Attacker.DisplayName} HP {preview.Attacker.CurrentHealth}/{preview.Attacker.MaxHealth}");
-            builder.AppendLine($"Deals {preview.AttackerDamage} damage");
-            builder.AppendLine();
-            builder.AppendLine($"{preview.Defender.DisplayName} HP {preview.Defender.CurrentHealth}/{preview.Defender.MaxHealth}");
+            builder.AppendLine($"Attack: {preview.AttackerDamage} dmg");
+            builder.AppendLine($"Vs {preview.Defender.DisplayName} HP {preview.Defender.CurrentHealth}/{preview.Defender.MaxHealth}");
+            builder.AppendLine($"Def Terrain: {defenderTerrain} +{preview.DefenderTerrainDefenseBonus} Def ({preview.DefenderEffectiveDefense})");
             builder.Append("Counter: ");
             builder.Append(preview.CanCounter ? preview.CounterDamage.ToString() : "None");
+            if (preview.CanCounter)
+            {
+                builder.Append($" | {attackerTerrain} +{preview.AttackerTerrainDefenseBonus} Def ({preview.AttackerEffectiveDefense})");
+            }
             return builder.ToString();
         }
 
@@ -514,12 +527,12 @@ namespace SLG.Core
                 panelRect.anchorMax = new Vector2(1f, 0f);
                 panelRect.pivot = new Vector2(1f, 0f);
                 panelRect.anchoredPosition = new Vector2(-20f, 20f);
-                panelRect.sizeDelta = new Vector2(280f, 140f);
+                panelRect.sizeDelta = new Vector2(360f, 130f);
             }
 
             if (combatPreviewText == null)
             {
-                combatPreviewText = CreatePreviewText("Combat Preview Text", combatPreviewPanel.transform, new Vector2(12f, -12f), new Vector2(256f, 116f));
+                combatPreviewText = CreatePreviewText("Combat Preview Text", combatPreviewPanel.transform, new Vector2(12f, -12f), new Vector2(336f, 106f));
             }
         }
 

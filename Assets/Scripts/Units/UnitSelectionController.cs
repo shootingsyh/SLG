@@ -23,6 +23,7 @@ namespace SLG.Units
 
         public bool IsUnitMoving => isUnitMoving || isAttackInProgress;
         public bool HasPendingAction => selectedUnit != null && selectedUnitMoved && !selectedUnit.HasActed;
+        public Unit SelectedUnit => selectedUnit;
 
         public void InitializeUnitsOnGrid()
         {
@@ -37,6 +38,18 @@ namespace SLG.Units
 
                 if (gridSystem != null && gridSystem.TryGetTile(unit.CurrentCoordinate, out Tile tile))
                 {
+                    if (!tile.CanEnter(unit))
+                    {
+                        Debug.LogError($"Unit '{unit.DisplayName}' starts on terrain it cannot enter at {tile.Coordinate}.", unit);
+                        continue;
+                    }
+
+                    if (tile.OccupyingUnit != null && tile.OccupyingUnit != unit)
+                    {
+                        Debug.LogError($"Multiple units are assigned to tile {tile.Coordinate}: '{tile.OccupyingUnit.DisplayName}' and '{unit.DisplayName}'.", unit);
+                        continue;
+                    }
+
                     unit.PlaceOnTile(tile);
                 }
 

@@ -127,3 +127,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SLG.Grid.Tile
   x: 0
   y: 0
+  terrainDefinition: {fileID: 11400000, guid: 34916350fd9abbd4da034ef7f92f87bf, type: 2}
+  useMovementCostOverride: 0
+  movementCostOverride: 1
+  occupyingUnit: {fileID: 0}

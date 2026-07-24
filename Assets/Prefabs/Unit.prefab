@@ -127,25 +127,29 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2413aa38e1c0b3b48b75dd3cd112e1e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SLG.Units.Unit
-  displayName: Player Unit
+  unitDefinition: {fileID: 11400000, guid: c84dc06c04a4fc34d82992a2f4c189ef, type: 2}
   faction: 0
   currentCoordinate:
     x: 3
     y: 3
-  movementRange: 3
-  maxHealth: 10
-  currentHealth: 10
-  attackPower: 4
-  defense: 1
-  attackRange: 1
   occupiedTile: {fileID: 0}
   selectionController: {fileID: 0}
   movementSpeed: 4
   tileHeightOffset: 0.55
+  currentHealth: 14
+  fallbackDisplayName: Unit
+  fallbackMovementRange: 3
+  fallbackMaxHealth: 10
+  fallbackAttackPower: 4
+  fallbackDefense: 1
+  fallbackMinimumAttackRange: 1
+  fallbackAttackRange: 1
+  fallbackMovementProfile: 0
   playerColor: {r: 0.18, g: 0.38, b: 0.9, a: 1}
   enemyColor: {r: 0.85, g: 0.18, b: 0.18, a: 1}
   selectedColor: {r: 1, g: 0.95, b: 0.3, a: 1}
   movingColor: {r: 0.9, g: 0.7, b: 1, a: 1}
   attackTargetColor: {r: 1, g: 0.45, b: 0.15, a: 1}
+  previewTargetColor: {r: 1, g: 0.85, b: 0.15, a: 1}
   takingDamageColor: {r: 1, g: 1, b: 1, a: 1}
   actedBrightness: 0.45

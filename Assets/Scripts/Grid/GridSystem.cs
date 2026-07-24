@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using SLG.Core;
+using SLG.Terrain;
+using SLG.UI;
 using SLG.Units;
 using UnityEngine;
 
@@ -19,8 +21,32 @@ namespace SLG.Grid
         [SerializeField] private Color selectedColor = new Color(1f, 0.82f, 0.25f, 1f);
         [SerializeField] private Color movementRangeColor = new Color(0.22f, 0.55f, 0.32f, 1f);
 
+        [Header("Terrain Definitions")]
+        [SerializeField] private TerrainDefinition defaultTerrain;
+        [SerializeField] private TerrainDefinition plainTerrain;
+        [SerializeField] private TerrainDefinition roadTerrain;
+        [SerializeField] private TerrainDefinition forestTerrain;
+        [SerializeField] private TerrainDefinition mountainTerrain;
+        [SerializeField] private TerrainDefinition waterTerrain;
+        [SerializeField] private TerrainDefinition wallTerrain;
+
+        [Header("Terrain Layout")]
+        [Tooltip("Top row first. Use P=Plain, R=Road, F=Forest, M=Mountain, W=Water, X=Wall.")]
+        [SerializeField] private string[] terrainRows =
+        {
+            "PPFFPMMP",
+            "PPRRPPMP",
+            "FFPWWRPP",
+            "PPRWWRFP",
+            "PMRRRRFP",
+            "PMMWWRPP",
+            "PPRRPPFF",
+            "PPPXPPPP"
+        };
+
         [Header("Selection")]
         [SerializeField] private UnitSelectionController unitSelectionController;
+        [SerializeField] private TerrainInfoController terrainInfoController;
 
         private Tile[,] tiles;
         private Tile selectedTile;
@@ -33,6 +59,7 @@ namespace SLG.Grid
         public float TileSize => tileSize;
         public GridPathfinder Pathfinder => pathfinder;
         public GridReachability Reachability => reachability;
+        public Unit SelectedUnit => unitSelectionController != null ? unitSelectionController.SelectedUnit : null;
 
         public Vector3 GetTileWorldPosition(GridCoordinate coordinate)
         {
@@ -42,10 +69,15 @@ namespace SLG.Grid
 
         private void Start()
         {
+            RebuildGrid();
+            unitSelectionController?.InitializeUnitsOnGrid();
+        }
+
+        public void RebuildGrid()
+        {
             GenerateGrid();
             pathfinder = new GridPathfinder(this);
             reachability = new GridReachability(this);
-            unitSelectionController?.InitializeUnitsOnGrid();
         }
 
         public void HandleTileClicked(Tile tile)
@@ -57,6 +89,21 @@ namespace SLG.Grid
 
             unitSelectionController?.DeselectCurrentUnit();
             SelectTile(tile);
+        }
+
+        public void HandleTileHoverEntered(Tile tile)
+        {
+            terrainInfoController?.Show(tile, SelectedUnit);
+        }
+
+        public void HandleTileHoverStayed(Tile tile)
+        {
+            terrainInfoController?.Show(tile, SelectedUnit);
+        }
+
+        public void HandleTileHoverExited(Tile tile)
+        {
+            terrainInfoController?.Hide();
         }
 
         public IReadOnlyList<Tile> GetNeighbors(Tile tile)
@@ -142,6 +189,11 @@ namespace SLG.Grid
             }
 
             ClearGeneratedTiles();
+            if (terrainInfoController == null)
+            {
+                terrainInfoController = FindAnyObjectByType<TerrainInfoController>();
+            }
+
             tiles = new Tile[width, height];
 
             Vector3 originOffset = new Vector3((width - 1) * tileSize * 0.5f, 0f, (height - 1) * tileSize * 0.5f);
@@ -155,9 +207,44 @@ namespace SLG.Grid
                     Tile tile = Instantiate(tilePrefab, position, Quaternion.identity, transform);
                     tile.name = $"Tile {coordinate}";
                     tile.transform.localScale = new Vector3(tileSize, 0.1f, tileSize);
-                    tile.Initialize(this, coordinate, tileColor, hoverColor, selectedColor, movementRangeColor);
+                    tile.Initialize(this, coordinate, GetTerrainForCoordinate(coordinate), tileColor, hoverColor, selectedColor, movementRangeColor);
                     tiles[x, y] = tile;
                 }
+            }
+        }
+
+        private TerrainDefinition GetTerrainForCoordinate(GridCoordinate coordinate)
+        {
+            if (terrainRows == null || terrainRows.Length == 0)
+            {
+                return defaultTerrain != null ? defaultTerrain : plainTerrain;
+            }
+
+            int rowIndex = height - 1 - coordinate.Y;
+            if (rowIndex < 0 || rowIndex >= terrainRows.Length || string.IsNullOrEmpty(terrainRows[rowIndex]) || coordinate.X >= terrainRows[rowIndex].Length)
+            {
+                return defaultTerrain != null ? defaultTerrain : plainTerrain;
+            }
+
+            return GetTerrainByCode(terrainRows[rowIndex][coordinate.X]);
+        }
+
+        private TerrainDefinition GetTerrainByCode(char code)
+        {
+            switch (char.ToUpperInvariant(code))
+            {
+                case 'R':
+                    return roadTerrain != null ? roadTerrain : defaultTerrain;
+                case 'F':
+                    return forestTerrain != null ? forestTerrain : defaultTerrain;
+                case 'M':
+                    return mountainTerrain != null ? mountainTerrain : defaultTerrain;
+                case 'W':
+                    return waterTerrain != null ? waterTerrain : defaultTerrain;
+                case 'X':
+                    return wallTerrain != null ? wallTerrain : defaultTerrain;
+                default:
+                    return plainTerrain != null ? plainTerrain : defaultTerrain;
             }
         }
 

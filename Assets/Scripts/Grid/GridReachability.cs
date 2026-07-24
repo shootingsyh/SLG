@@ -43,7 +43,13 @@ namespace SLG.Grid
                         continue;
                     }
 
-                    int newCost = costSoFar[current] + neighbor.MovementCost;
+                    int movementCost = neighbor.GetMovementCost(movingUnit);
+                    if (movementCost == int.MaxValue)
+                    {
+                        continue;
+                    }
+
+                    int newCost = costSoFar[current] + movementCost;
                     if (newCost > movementRange)
                     {
                         continue;

@@ -57,7 +57,13 @@ namespace SLG.Grid
                         continue;
                     }
 
-                    int tentativeScore = gScore[current] + neighbor.MovementCost;
+                    int movementCost = neighbor.GetMovementCost(movingUnit);
+                    if (movementCost == int.MaxValue)
+                    {
+                        continue;
+                    }
+
+                    int tentativeScore = gScore[current] + movementCost;
                     if (!gScore.TryGetValue(neighbor, out int existingScore) || tentativeScore < existingScore)
                     {
                         cameFrom[neighbor] = current;

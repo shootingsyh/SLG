@@ -14,20 +14,32 @@ namespace SLG.Units
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
 
-        [SerializeField] private string displayName = "Unit";
+        [Header("Definition")]
+        [SerializeField] private UnitDefinition unitDefinition;
+
+        [Header("Instance")]
         [SerializeField] private UnitFaction faction = UnitFaction.Player;
         [SerializeField] private GridCoordinate currentCoordinate;
-        [SerializeField] private int movementRange = 3;
-        [SerializeField] private int maxHealth = 10;
-        [SerializeField] private int currentHealth;
-        [SerializeField] private int attackPower = 4;
-        [SerializeField] private int defense = 1;
-        [SerializeField] private int minimumAttackRange = 1;
-        [SerializeField] private int attackRange = 1;
         [SerializeField] private Tile occupiedTile;
         [SerializeField] private UnitSelectionController selectionController;
         [SerializeField] private float movementSpeed = 4f;
         [SerializeField] private float tileHeightOffset = 0.55f;
+
+        [Header("Runtime Debug")]
+        [SerializeField] private int currentHealth;
+
+        [Header("Fallback Stats")]
+        [Tooltip("Used only if Unit Definition is missing.")]
+        [SerializeField] private string fallbackDisplayName = "Unit";
+        [SerializeField] private int fallbackMovementRange = 3;
+        [SerializeField] private int fallbackMaxHealth = 10;
+        [SerializeField] private int fallbackAttackPower = 4;
+        [SerializeField] private int fallbackDefense = 1;
+        [SerializeField] private int fallbackMinimumAttackRange = 1;
+        [SerializeField] private int fallbackAttackRange = 1;
+        [SerializeField] private MovementProfile fallbackMovementProfile = MovementProfile.Ground;
+
+        [Header("Visuals")]
         [SerializeField] private Color playerColor = new Color(0.18f, 0.38f, 0.9f, 1f);
         [SerializeField] private Color enemyColor = new Color(0.85f, 0.18f, 0.18f, 1f);
         [SerializeField] private Color selectedColor = new Color(1f, 0.95f, 0.3f, 1f);
@@ -48,16 +60,18 @@ namespace SLG.Units
         private bool isDead;
         private TextMesh healthText;
 
-        public string DisplayName => displayName;
+        public UnitDefinition Definition => unitDefinition;
+        public string DisplayName => unitDefinition != null ? unitDefinition.DisplayName : fallbackDisplayName;
         public UnitFaction Faction => faction;
         public GridCoordinate CurrentCoordinate => currentCoordinate;
-        public int MovementRange => movementRange;
-        public int MaxHealth => maxHealth;
+        public int MovementRange => unitDefinition != null ? unitDefinition.MovementRange : Mathf.Max(1, fallbackMovementRange);
+        public int MaxHealth => unitDefinition != null ? unitDefinition.MaxHealth : Mathf.Max(1, fallbackMaxHealth);
         public int CurrentHealth => currentHealth;
-        public int AttackPower => attackPower;
-        public int Defense => defense;
-        public int MinimumAttackRange => Mathf.Max(1, minimumAttackRange);
-        public int AttackRange => Mathf.Max(MinimumAttackRange, attackRange);
+        public int AttackPower => unitDefinition != null ? unitDefinition.AttackPower : fallbackAttackPower;
+        public int Defense => unitDefinition != null ? unitDefinition.Defense : fallbackDefense;
+        public int MinimumAttackRange => unitDefinition != null ? unitDefinition.MinimumAttackRange : Mathf.Max(1, fallbackMinimumAttackRange);
+        public int AttackRange => unitDefinition != null ? unitDefinition.MaximumAttackRange : Mathf.Max(MinimumAttackRange, fallbackAttackRange);
+        public MovementProfile MovementProfile => unitDefinition != null ? unitDefinition.MovementProfile : fallbackMovementProfile;
         public Tile OccupiedTile => occupiedTile;
         public bool IsMoving => isMoving;
         public bool HasActed => hasActed;
@@ -68,7 +82,8 @@ namespace SLG.Units
             selectionController = controller;
             currentCoordinate = coordinate;
             occupiedTile = tile;
-            InitializeHealth();
+            ValidateDefinition();
+            InitializeHealthForBattle();
             ApplySelectionState(false);
         }
 
@@ -152,8 +167,7 @@ namespace SLG.Units
 
         public void InitializeHealthForBattle()
         {
-            maxHealth = Mathf.Max(1, maxHealth);
-            currentHealth = Mathf.Clamp(currentHealth <= 0 ? maxHealth : currentHealth, 0, maxHealth);
+            currentHealth = Mathf.Clamp(currentHealth <= 0 ? MaxHealth : currentHealth, 0, MaxHealth);
             isDead = currentHealth <= 0;
             UpdateHealthDisplay();
             RefreshVisualState();
@@ -163,6 +177,7 @@ namespace SLG.Units
         {
             CacheRenderer();
             EnsureHealthDisplay();
+            ApplyDefinitionVisuals();
             InitializeHealth();
             RefreshVisualState();
         }
@@ -280,8 +295,7 @@ namespace SLG.Units
 
         private void InitializeHealth()
         {
-            maxHealth = Mathf.Max(1, maxHealth);
-            currentHealth = Mathf.Clamp(currentHealth, 0, maxHealth);
+            currentHealth = Mathf.Clamp(currentHealth, 0, MaxHealth);
 
             isDead = currentHealth <= 0;
             UpdateHealthDisplay();
@@ -312,9 +326,38 @@ namespace SLG.Units
         {
             if (healthText != null)
             {
-                healthText.text = $"{currentHealth}/{maxHealth}";
+                healthText.text = $"{currentHealth}/{MaxHealth}";
                 healthText.gameObject.SetActive(!isDead);
             }
+        }
+
+        private void ValidateDefinition()
+        {
+            if (unitDefinition == null)
+            {
+                Debug.LogWarning($"Unit '{name}' has no UnitDefinition and is using fallback stats.", this);
+                return;
+            }
+
+            if (unitDefinition.MaxHealth <= 0 || unitDefinition.MovementRange <= 0)
+            {
+                Debug.LogError($"Unit '{name}' has an invalid UnitDefinition '{unitDefinition.name}'.", this);
+            }
+
+            if (AttackRange < MinimumAttackRange)
+            {
+                Debug.LogError($"Unit '{name}' has invalid attack range.", this);
+            }
+        }
+
+        private void ApplyDefinitionVisuals()
+        {
+            if (!CacheRenderer() || unitDefinition == null || unitDefinition.Material == null)
+            {
+                return;
+            }
+
+            unitRenderer.sharedMaterial = unitDefinition.Material;
         }
 
         private void Die()
@@ -380,7 +423,9 @@ namespace SLG.Units
                 return;
             }
 
-            Color color = faction == UnitFaction.Player ? playerColor : enemyColor;
+            Color factionColor = faction == UnitFaction.Player ? playerColor : enemyColor;
+            Color definitionColor = unitDefinition != null ? unitDefinition.BaseDisplayColor : Color.white;
+            Color color = Color.Lerp(definitionColor, factionColor, 0.45f);
             if (hasActed)
             {
                 color *= Mathf.Clamp01(actedBrightness);
