@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using SLG.Grid;
+using SLG.Scenarios;
 using SLG.Units;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
@@ -21,6 +22,7 @@ namespace SLG.Core
         [SerializeField] private Button waitButton;
         [SerializeField] private GameObject combatPreviewPanel;
         [SerializeField] private Text combatPreviewText;
+        [SerializeField] private BattleScenarioController scenarioController;
 
         private readonly List<Unit> units = new List<Unit>();
         private readonly List<Tile> reachableTiles = new List<Tile>();
@@ -31,6 +33,7 @@ namespace SLG.Core
         private bool battleEnded;
         private bool combatPreviewFollowsMouse;
         private string battleResult = string.Empty;
+        private int currentRound = 1;
 
         public BattlePhase CurrentPhase => currentPhase;
         public bool IsBattleEnded => battleEnded;
@@ -39,6 +42,20 @@ namespace SLG.Core
         public bool IsPlayerInputAllowed => !battleEnded && currentPhase == BattlePhase.PlayerTurn && !isEnemyActing && unitSelectionController != null && !unitSelectionController.IsUnitMoving;
         public bool IsCombatPreviewVisible => combatPreviewPanel != null && combatPreviewPanel.activeSelf;
         public IReadOnlyList<Unit> ActiveUnits => units;
+        public int CurrentRound => scenarioController != null && scenarioController.HasConfiguration ? scenarioController.CurrentRound : currentRound;
+        public int CompletedRounds => scenarioController != null && scenarioController.HasConfiguration ? scenarioController.CompletedRounds : Mathf.Max(0, currentRound - 1);
+
+        public void ConfigureScenarioController(BattleScenarioController scenario)
+        {
+            scenarioController = scenario;
+        }
+
+        public void ConfigureRuntime(GridSystem gridSystem, UnitSelectionController unitSelectionController, BattleScenarioController scenario = null)
+        {
+            this.gridSystem = gridSystem;
+            this.unitSelectionController = unitSelectionController;
+            scenarioController = scenario;
+        }
 
         private void Awake()
         {
@@ -66,6 +83,11 @@ namespace SLG.Core
             }
 
             HideCombatPreview();
+            if (scenarioController == null)
+            {
+                scenarioController = FindAnyObjectByType<BattleScenarioController>();
+            }
+
             BeginPlayerTurn();
         }
 
@@ -82,9 +104,16 @@ namespace SLG.Core
             }
 
             unitSelectionController?.DeselectCurrentUnit();
+            scenarioController?.NotifyPlayerUnitCommitted(unit);
 
             if (CheckBattleEnd())
             {
+                return;
+            }
+
+            if (AreAllLivingUnitsActed(UnitFaction.Player))
+            {
+                StartEnemyTurn();
                 return;
             }
 
@@ -122,7 +151,7 @@ namespace SLG.Core
             }
 
             EndPlayerTurn();
-            return currentPhase == BattlePhase.EnemyTurn;
+            return true;
         }
 
         public int CountLivingUnits(UnitFaction faction)
@@ -171,6 +200,8 @@ namespace SLG.Core
             unitSelectionController?.DeselectCurrentUnit();
             RefreshUnits();
             ResetActedState(UnitFaction.Enemy);
+            scenarioController?.NotifyEnemyPhaseStarted(CurrentRound);
+            RefreshUnits();
             CheckBattleEnd();
             UpdateTurnUi();
             StartCoroutine(RunEnemyTurn());
@@ -178,6 +209,19 @@ namespace SLG.Core
 
         private IEnumerator RunEnemyTurn()
         {
+            if (scenarioController != null && scenarioController.HasConfiguration && !scenarioController.IsAiEnabled)
+            {
+                scenarioController.NotifyEnemyPhaseCompleted();
+                currentRound = scenarioController.CurrentRound;
+                RefreshUnits();
+                if (!CheckBattleEnd())
+                {
+                    BeginPlayerTurn();
+                }
+
+                yield break;
+            }
+
             for (int i = 0; i < units.Count; i++)
             {
                 Unit enemy = units[i];
@@ -196,6 +240,21 @@ namespace SLG.Core
                 {
                     yield break;
                 }
+            }
+
+            if (scenarioController != null && scenarioController.HasConfiguration)
+            {
+                scenarioController.NotifyEnemyPhaseCompleted();
+                currentRound = scenarioController.CurrentRound;
+            }
+            else
+            {
+                currentRound++;
+            }
+            RefreshUnits();
+            if (CheckBattleEnd())
+            {
+                yield break;
             }
 
             BeginPlayerTurn();
@@ -637,6 +696,28 @@ namespace SLG.Core
             }
         }
 
+        private bool AreAllLivingUnitsActed(UnitFaction faction)
+        {
+            RefreshUnits();
+            bool hasLivingUnit = false;
+            for (int i = 0; i < units.Count; i++)
+            {
+                Unit unit = units[i];
+                if (unit == null || !unit.IsAlive || unit.Faction != faction)
+                {
+                    continue;
+                }
+
+                hasLivingUnit = true;
+                if (!unit.HasActed)
+                {
+                    return false;
+                }
+            }
+
+            return hasLivingUnit;
+        }
+
         private bool CheckBattleEnd()
         {
             if (battleEnded)
@@ -645,6 +726,17 @@ namespace SLG.Core
             }
 
             RefreshUnits();
+            if (scenarioController != null && scenarioController.HasConfiguration && scenarioController.TryEvaluateOutcome(units, out string scenarioResult))
+            {
+                EndBattle(scenarioResult);
+                return true;
+            }
+
+            if (scenarioController != null && scenarioController.HasConfiguration)
+            {
+                return false;
+            }
+
             bool hasLivingPlayer = false;
             bool hasLivingEnemy = false;
 
@@ -681,6 +773,7 @@ namespace SLG.Core
             battleResult = message;
             isEnemyActing = false;
             pendingEnemyTurn = false;
+            scenarioController?.NotifyBattleEnded();
             unitSelectionController?.ClearBattleUiAndSelection();
 
             if (resultLabel != null)

@@ -90,6 +90,17 @@ namespace SLG.Units
             ApplySelectionState(false);
         }
 
+        public void ConfigureRuntime(UnitDefinition definition, UnitFaction faction, GridCoordinate coordinate, int currentHealth = 0, float movementSpeed = 4f)
+        {
+            unitDefinition = definition;
+            this.faction = faction;
+            currentCoordinate = coordinate;
+            this.currentHealth = currentHealth;
+            this.movementSpeed = movementSpeed;
+            InitializeHealthForBattle();
+            ApplyDefinitionVisuals();
+        }
+
         public void PlaceOnTile(Tile tile)
         {
             if (tile == null)

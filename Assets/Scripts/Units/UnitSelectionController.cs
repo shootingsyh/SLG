@@ -71,6 +71,12 @@ namespace SLG.Units
         public bool IsResolvingCombat => interactionState == PlayerInteractionState.ResolvingCombat;
         public bool IsResolvingSkill => interactionState == PlayerInteractionState.ResolvingSkill;
 
+        public void ConfigureRuntime(GridSystem gridSystem, BattleTurnController battleTurnController)
+        {
+            this.gridSystem = gridSystem;
+            this.battleTurnController = battleTurnController;
+        }
+
         private void Awake()
         {
             EnsureUiControllers();
@@ -366,9 +372,8 @@ namespace SLG.Units
                 return false;
             }
 
-            Unit unit = selectedUnit;
             WaitSelectedUnit();
-            return unit.HasActed && interactionState == PlayerInteractionState.Idle;
+            return true;
         }
 
         public bool TryCancel()

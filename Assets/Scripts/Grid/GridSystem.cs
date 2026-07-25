@@ -67,6 +67,20 @@ namespace SLG.Grid
             return new Vector3(coordinate.X * tileSize, 0f, coordinate.Y * tileSize) - originOffset + transform.position;
         }
 
+        public void ConfigureRuntime(int width, int height, string[] terrainRows, Tile tilePrefab, TerrainDefinition plainTerrain, TerrainDefinition forestTerrain, TerrainDefinition waterTerrain, TerrainDefinition wallTerrain, UnitSelectionController unitSelectionController)
+        {
+            this.width = Mathf.Max(1, width);
+            this.height = Mathf.Max(1, height);
+            this.terrainRows = terrainRows != null ? (string[])terrainRows.Clone() : null;
+            this.tilePrefab = tilePrefab;
+            defaultTerrain = plainTerrain;
+            this.plainTerrain = plainTerrain;
+            this.forestTerrain = forestTerrain;
+            this.waterTerrain = waterTerrain;
+            this.wallTerrain = wallTerrain;
+            this.unitSelectionController = unitSelectionController;
+        }
+
         private void Start()
         {
             RebuildGrid();

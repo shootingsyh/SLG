@@ -26,5 +26,11 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Tests/Test_BattleEnd.unity
     guid: 1c0cbcb0fe024414ab6044f99610c501
+  - enabled: 1
+    path: Assets/Scenes/BattleTestLab.unity
+    guid: 8c23e72c9b0d16047af9401c9ce3c60b
+  - enabled: 1
+    path: Assets/Scenes/BattleTestTemplate.unity
+    guid: 2f8827a3e3474df42b125d780073815d
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

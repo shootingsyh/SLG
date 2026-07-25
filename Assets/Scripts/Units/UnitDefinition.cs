@@ -47,6 +47,30 @@ namespace SLG.Units
         public Color BaseDisplayColor => baseDisplayColor;
         public Material Material => material;
 
+        public void ConfigureRuntime(string displayName, string archetypeName, int maxHealth, int attackPower, int defense, int movementRange, MovementProfile movementProfile, int minimumAttackRange = 1, int maximumAttackRange = 1, IReadOnlyList<SkillDefinition> skills = null)
+        {
+            this.displayName = displayName;
+            this.archetypeName = archetypeName;
+            this.maxHealth = Mathf.Max(1, maxHealth);
+            this.attackPower = attackPower;
+            this.defense = defense;
+            this.movementRange = Mathf.Max(1, movementRange);
+            this.movementProfile = movementProfile;
+            this.minimumAttackRange = Mathf.Max(1, minimumAttackRange);
+            this.maximumAttackRange = Mathf.Max(this.minimumAttackRange, maximumAttackRange);
+            this.skills.Clear();
+            if (skills != null)
+            {
+                for (int i = 0; i < skills.Count; i++)
+                {
+                    if (skills[i] != null)
+                    {
+                        this.skills.Add(skills[i]);
+                    }
+                }
+            }
+        }
+
         private void OnValidate()
         {
             maxHealth = Mathf.Max(1, maxHealth);

@@ -50,6 +50,24 @@ namespace SLG.Skills
         public Sprite Icon => icon;
         public Color PreviewColor => previewColor;
 
+        public void ConfigureRuntime(string skillId, string displayName, string description, SkillEffectType effectType, SkillTargetType targetType, SkillAreaShape areaShape, int areaSize, int minimumRange, int maximumRange, int power, bool canTargetSelf, bool canTargetAllies, bool canTargetEnemies, bool canTargetEmptyGround)
+        {
+            this.skillId = skillId;
+            this.displayName = displayName;
+            this.description = description;
+            this.effectType = effectType;
+            this.targetType = targetType;
+            this.areaShape = areaShape;
+            this.areaSize = Mathf.Max(0, areaSize);
+            this.minimumRange = Mathf.Max(0, minimumRange);
+            this.maximumRange = Mathf.Max(this.minimumRange, maximumRange);
+            this.power = power;
+            this.canTargetSelf = canTargetSelf;
+            this.canTargetAllies = canTargetAllies;
+            this.canTargetEnemies = canTargetEnemies;
+            this.canTargetEmptyGround = canTargetEmptyGround;
+        }
+
         private void OnValidate()
         {
             minimumRange = Mathf.Max(0, minimumRange);

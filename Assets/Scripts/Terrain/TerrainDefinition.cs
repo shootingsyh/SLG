@@ -52,6 +52,16 @@ namespace SLG.Terrain
             return profile == MovementProfile.Flying ? 1 : BaseMovementCost;
         }
 
+        public void ConfigureRuntime(string displayName, string terrainId, int movementCost, int defenseBonus, bool groundEnterable, bool flyingEnterable)
+        {
+            this.displayName = displayName;
+            this.terrainId = terrainId;
+            baseMovementCost = Mathf.Max(1, movementCost);
+            this.defenseBonus = defenseBonus;
+            this.groundEnterable = groundEnterable;
+            this.flyingEnterable = flyingEnterable;
+        }
+
         private void OnValidate()
         {
             baseMovementCost = Mathf.Max(1, baseMovementCost);
