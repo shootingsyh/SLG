@@ -269,7 +269,7 @@ namespace SLG.Tests
         {
             UnitDefinition definition = ScriptableObject.CreateInstance<UnitDefinition>();
             objects.Add(definition);
-            definition.ConfigureRuntime("Unit", "Unit", 10, 3, 1, 3, MovementProfile.Ground);
+            definition.ConfigureRuntime("Unit", "Unit", 10, 3, 1, 3, MovementProfile.Ground, 1, 1, null, "unit");
             return definition;
         }
 

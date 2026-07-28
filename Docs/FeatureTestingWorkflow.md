@@ -12,3 +12,5 @@ For every gameplay feature:
 8. Report untestable behavior honestly, including the blocker and recommended next step.
 
 Battle Test Lab presets and headless PlayMode tests should share `BattleSetupConfiguration` wherever practical. Do not create a separate manual-only scenario format when the behavior can be represented by the shared configuration model.
+
+For persistent gameplay state, also update `Docs/SaveSystem.md` and add save serialization, validation, and headless round-trip tests before considering the feature complete.

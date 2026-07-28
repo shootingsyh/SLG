@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using SLG.Core;
 using SLG.Grid;
+using SLG.Saves;
 using SLG.Terrain;
 using SLG.Units;
 using UnityEngine;
@@ -18,13 +19,16 @@ namespace SLG.Scenarios
         public BattleTurnController Turns;
         public UnitSelectionController Player;
         public BattleScenarioController Scenario;
+        public BattleSystemMenuController SystemMenu;
+        public BattleEndScreenController EndScreen;
         public readonly Dictionary<string, Unit> UnitsByKey = new Dictionary<string, Unit>();
     }
 
     public static class BattleScenarioRuntimeBuilder
     {
-        public static BattleRuntimeContext Build(BattleSetupConfiguration config, Transform parent = null, bool createUi = true)
+        public static BattleRuntimeContext Build(BattleSetupConfiguration config, Transform parent = null, bool createUi = true, SaveRepository repository = null, BattleTestPresetId presetId = BattleTestPresetId.FullScenarioSmoke)
         {
+            ClearExistingRuntimeBattleObjects();
             List<string> errors = new List<string>();
             if (!BattleSetupValidator.Validate(config, errors))
             {
@@ -45,6 +49,8 @@ namespace SLG.Scenarios
             UnitSelectionController player = systems.AddComponent<UnitSelectionController>();
             BattleTurnController turns = systems.AddComponent<BattleTurnController>();
             BattleScenarioController scenario = systems.AddComponent<BattleScenarioController>();
+            BattleSystemMenuController systemMenu = systems.AddComponent<BattleSystemMenuController>();
+            BattleEndScreenController endScreen = systems.AddComponent<BattleEndScreenController>();
 
             GameObject gridObject = new GameObject("Scenario Grid");
             if (parent != null)
@@ -56,14 +62,19 @@ namespace SLG.Scenarios
             grid.ConfigureRuntime(config.Width, config.Height, config.TerrainRows, CreateTilePrefab(), Terrain("Plain", "plain", 1, 0, true, true), Terrain("Forest", "forest", 3, 2, true, true), Terrain("Water", "water", 1, 0, false, true), Terrain("Wall", "wall", 1, 0, false, false), player);
             player.ConfigureRuntime(grid, turns);
             turns.ConfigureRuntime(grid, player, scenario);
+            turns.ConfigureSystemMenu(systemMenu);
 
             BattleRuntimeContext context = new BattleRuntimeContext
             {
                 Grid = grid,
                 Turns = turns,
                 Player = player,
-                Scenario = scenario
+                Scenario = scenario,
+                SystemMenu = systemMenu,
+                EndScreen = endScreen
             };
+
+            systemMenu.Configure(context, repository ?? GameShellServices.Repository, presetId);
 
             for (int i = 0; i < config.Units.Count; i++)
             {
@@ -86,6 +97,39 @@ namespace SLG.Scenarios
             Unit unit = unitObject.AddComponent<Unit>();
             unit.ConfigureRuntime(setup.Definition, setup.Faction, setup.Coordinate, setup.CurrentHealth, 100f);
             return unit;
+        }
+
+        private static void ClearExistingRuntimeBattleObjects()
+        {
+            Unit[] units = Object.FindObjectsByType<Unit>(FindObjectsInactive.Exclude);
+            for (int i = 0; i < units.Length; i++)
+            {
+                if (units[i] != null)
+                {
+                    units[i].gameObject.SetActive(false);
+                    Object.Destroy(units[i].gameObject);
+                }
+            }
+
+            GridSystem[] grids = Object.FindObjectsByType<GridSystem>(FindObjectsInactive.Exclude);
+            for (int i = 0; i < grids.Length; i++)
+            {
+                if (grids[i] != null)
+                {
+                    grids[i].gameObject.SetActive(false);
+                    Object.Destroy(grids[i].gameObject);
+                }
+            }
+
+            BattleTurnController[] turns = Object.FindObjectsByType<BattleTurnController>(FindObjectsInactive.Exclude);
+            for (int i = 0; i < turns.Length; i++)
+            {
+                if (turns[i] != null)
+                {
+                    turns[i].gameObject.SetActive(false);
+                    Object.Destroy(turns[i].gameObject);
+                }
+            }
         }
 
         private static TerrainDefinition Terrain(string name, string id, int cost, int defense, bool ground, bool flying)

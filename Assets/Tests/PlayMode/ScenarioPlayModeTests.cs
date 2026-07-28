@@ -278,7 +278,7 @@ namespace SLG.Tests.PlayMode
                 }
             }
 
-            BattleRuntimeContext context = BattleScenarioRuntimeBuilder.Build(config, null, true);
+            BattleRuntimeContext context = BattleScenarioRuntimeBuilder.Build(config, null, true, null, TryGetPreset(config));
             yield return null;
             yield return null;
             Assert.That(context.Turns.CurrentPhase, Is.EqualTo(BattlePhase.PlayerTurn));
@@ -293,6 +293,19 @@ namespace SLG.Tests.PlayMode
             config.Reinforcements[0].ArrivalRound = 2;
             config.Reinforcements[0].SpawnCoordinate = config.Units[0].Coordinate;
             return config;
+        }
+
+        private static BattleTestPresetId TryGetPreset(BattleSetupConfiguration config)
+        {
+            foreach (BattleTestPresetMetadata metadata in BattleTestPresetLibrary.Presets)
+            {
+                if (metadata.DisplayName == config.ScenarioName)
+                {
+                    return metadata.Id;
+                }
+            }
+
+            return BattleTestPresetId.FullScenarioSmoke;
         }
     }
 }

@@ -77,6 +77,11 @@ namespace SLG.Units
             this.battleTurnController = battleTurnController;
         }
 
+        public void ForceInteractionStateForTests(PlayerInteractionState state)
+        {
+            interactionState = state;
+        }
+
         private void Awake()
         {
             EnsureUiControllers();

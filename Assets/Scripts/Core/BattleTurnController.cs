@@ -2,7 +2,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using SLG.Grid;
+using SLG.Saves;
 using SLG.Scenarios;
+using SLG.Shell;
 using SLG.Units;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
@@ -12,6 +14,48 @@ using UnityEngine.UI;
 
 namespace SLG.Core
 {
+    public enum SceneLoadedReason
+    {
+        None,
+        Victory,
+        Defeat
+    }
+
+    public enum BattleResultType
+    {
+        None,
+        Victory,
+        Defeat
+    }
+
+    public static class CampaignBatch
+    {
+        public static void RegisterProcessor(BattleTurnController controller, CampaignFlowService processor)
+        {
+            controller?.SetCampaignFlowProcessor(processor);
+        }
+
+        public static CampaignFlowService GetProcessor(BattleTurnController controller)
+        {
+            return controller == null ? null : controller._campaignFlowProcessor;
+        }
+
+        public static BattleResultType ResolveResult(BattleTurnController controller)
+        {
+            if (controller == null)
+                return BattleResultType.None;
+
+            string result = controller.BattleResult;
+            if (result == "Victory")
+                return BattleResultType.Victory;
+
+            if (result == "Defeat")
+                return BattleResultType.Defeat;
+
+            return BattleResultType.None;
+        }
+    }
+
     public sealed class BattleTurnController : MonoBehaviour
     {
         [SerializeField] private GridSystem gridSystem;
@@ -23,8 +67,11 @@ namespace SLG.Core
         [SerializeField] private GameObject combatPreviewPanel;
         [SerializeField] private Text combatPreviewText;
         [SerializeField] private BattleScenarioController scenarioController;
+        [SerializeField] private BattleSystemMenuController systemMenuController;
 
         private readonly List<Unit> units = new List<Unit>();
+        internal CampaignFlowService _campaignFlowProcessor;
+        private SceneLoadedReason _sceneLoadedReason;
         private readonly List<Tile> reachableTiles = new List<Tile>();
         private readonly List<Tile> pathBuffer = new List<Tile>();
         private BattlePhase currentPhase = BattlePhase.PlayerTurn;
@@ -39,7 +86,7 @@ namespace SLG.Core
         public bool IsBattleEnded => battleEnded;
         public bool IsEnemyActing => isEnemyActing;
         public string BattleResult => battleEnded ? battleResult : string.Empty;
-        public bool IsPlayerInputAllowed => !battleEnded && currentPhase == BattlePhase.PlayerTurn && !isEnemyActing && unitSelectionController != null && !unitSelectionController.IsUnitMoving;
+        public bool IsPlayerInputAllowed => !battleEnded && currentPhase == BattlePhase.PlayerTurn && !isEnemyActing && unitSelectionController != null && !unitSelectionController.IsUnitMoving && (systemMenuController == null || !systemMenuController.BlocksGameplayInput);
         public bool IsCombatPreviewVisible => combatPreviewPanel != null && combatPreviewPanel.activeSelf;
         public IReadOnlyList<Unit> ActiveUnits => units;
         public int CurrentRound => scenarioController != null && scenarioController.HasConfiguration ? scenarioController.CurrentRound : currentRound;
@@ -56,6 +103,38 @@ namespace SLG.Core
             this.unitSelectionController = unitSelectionController;
             scenarioController = scenario;
         }
+
+        public void ConfigureSystemMenu(BattleSystemMenuController systemMenu)
+        {
+            systemMenuController = systemMenu;
+        }
+
+        public void RestoreLoadedBattleState(int round)
+        {
+            battleEnded = false;
+            battleResult = string.Empty;
+            currentRound = Mathf.Max(1, round);
+            currentPhase = BattlePhase.PlayerTurn;
+            isEnemyActing = false;
+            pendingEnemyTurn = false;
+            RefreshUnits();
+            unitSelectionController?.DeselectCurrentUnit();
+            UpdateTurnUi();
+        }
+
+        public void ForcePhaseForTests(BattlePhase phase)
+        {
+            currentPhase = phase;
+            isEnemyActing = phase == BattlePhase.EnemyTurn;
+            UpdateTurnUi();
+        }
+
+        public void SetCampaignFlowProcessor(CampaignFlowService processor)
+        {
+            _campaignFlowProcessor = processor;
+        }
+
+        public SceneLoadedReason SceneLoadedReason => _sceneLoadedReason;
 
         private void Awake()
         {
@@ -783,6 +862,17 @@ namespace SLG.Core
             }
 
             UpdateTurnUi();
+
+            BattleEndScreenController endScreen = GetComponent<BattleEndScreenController>();
+            if (endScreen != null)
+            {
+                endScreen.Show(message, scenarioController?.State, scenarioController?.Configuration);
+            }
+            else
+            {
+                BattleEndScreenController controller = gameObject.AddComponent<BattleEndScreenController>();
+                controller.Show(message, scenarioController?.State, scenarioController?.Configuration);
+            }
         }
 
         public void UpdateTurnControls()

@@ -101,6 +101,17 @@ namespace SLG.Units
             ApplyDefinitionVisuals();
         }
 
+        public void RestoreRuntimeState(GridCoordinate coordinate, int health, bool acted)
+        {
+            currentCoordinate = coordinate;
+            currentHealth = Mathf.Clamp(health, 0, MaxHealth);
+            isDead = currentHealth <= 0;
+            hasActed = acted;
+            gameObject.SetActive(!isDead);
+            UpdateHealthDisplay();
+            RefreshVisualState();
+        }
+
         public void PlaceOnTile(Tile tile)
         {
             if (tile == null)

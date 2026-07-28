@@ -14,7 +14,14 @@
     "defineConstraints": [],
     "versionDefines": [],
     "noEngineReferences": false,
-    "optionalUnityReferences": [
-        "TestAssemblies"
-    ]
+        "optionalUnityReferences": [
+            "TestAssemblies"
+        ],
+        "testableAssemblies": [
+            "SLG.PlayModeTests"
+        ],
+        "playModeTestRunnerArgs": {
+            "mode": 1,
+            "parameters": ""
+        }
 }

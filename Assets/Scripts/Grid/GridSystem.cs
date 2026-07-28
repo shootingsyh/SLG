@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using SLG.Core;
+using SLG.Saves;
 using SLG.Terrain;
 using SLG.UI;
 using SLG.Units;
@@ -96,6 +97,13 @@ namespace SLG.Grid
 
         public void HandleTileClicked(Tile tile)
         {
+            BattleSystemMenuController systemMenu = FindAnyObjectByType<BattleSystemMenuController>();
+            if (systemMenu != null && tile != null && tile.OccupyingUnit == null && unitSelectionController != null && unitSelectionController.CurrentInteractionState == UnitSelectionController.PlayerInteractionState.Idle)
+            {
+                systemMenu.TryOpenSystemMenu(Camera.main != null ? (Vector2)Camera.main.WorldToScreenPoint(tile.transform.position) : new Vector2(Screen.width * 0.5f, Screen.height * 0.5f));
+                return;
+            }
+
             if (unitSelectionController != null && unitSelectionController.HandleTileClicked(tile))
             {
                 return;

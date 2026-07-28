@@ -8,6 +8,7 @@ namespace SLG.Units
     public sealed class UnitDefinition : ScriptableObject
     {
         [Header("Identity")]
+        [SerializeField] private string unitDefinitionId = "unit";
         [SerializeField] private string displayName = "Unit";
         [SerializeField] private string archetypeName = "Class";
         [TextArea]
@@ -34,6 +35,7 @@ namespace SLG.Units
         [SerializeField] private Material material;
 
         public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
+        public string UnitDefinitionId => string.IsNullOrWhiteSpace(unitDefinitionId) ? name : unitDefinitionId;
         public string ArchetypeName => archetypeName;
         public string Description => description;
         public int MaxHealth => Mathf.Max(1, maxHealth);
@@ -47,8 +49,9 @@ namespace SLG.Units
         public Color BaseDisplayColor => baseDisplayColor;
         public Material Material => material;
 
-        public void ConfigureRuntime(string displayName, string archetypeName, int maxHealth, int attackPower, int defense, int movementRange, MovementProfile movementProfile, int minimumAttackRange = 1, int maximumAttackRange = 1, IReadOnlyList<SkillDefinition> skills = null)
+        public void ConfigureRuntime(string displayName, string archetypeName, int maxHealth, int attackPower, int defense, int movementRange, MovementProfile movementProfile, int minimumAttackRange = 1, int maximumAttackRange = 1, IReadOnlyList<SkillDefinition> skills = null, string unitDefinitionId = null)
         {
+            this.unitDefinitionId = string.IsNullOrWhiteSpace(unitDefinitionId) ? displayName : unitDefinitionId;
             this.displayName = displayName;
             this.archetypeName = archetypeName;
             this.maxHealth = Mathf.Max(1, maxHealth);

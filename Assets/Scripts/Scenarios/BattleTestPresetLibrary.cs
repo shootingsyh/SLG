@@ -43,7 +43,24 @@ namespace SLG.Scenarios
             Preset(BattleTestPresetId.ReachAndEliminate, "Reach + Eliminate", 1, "Verify Knight reaches exit and all enemies including reinforcements are defeated."),
             Preset(BattleTestPresetId.ProtectAndSurvive, "Protect + Survive", 0, "Verify Healer must live until survive objective completes."),
             Preset(BattleTestPresetId.ReinforcementSpawnOccupiedFallback, "Reinforcement Spawn Occupied Fallback", 1, "Verify blocked spawn uses nearest deterministic fallback."),
-            Preset(BattleTestPresetId.FullScenarioSmoke, "Full Scenario Smoke", 2, "Verify reach, protect, survive, eliminate, and reinforcements together.")
+            Preset(BattleTestPresetId.FullScenarioSmoke, "Full Scenario Smoke", 2, "Verify reach, protect, survive, eliminate, and reinforcements together."),
+            Preset(BattleTestPresetId.SaveLoadBasic, "Save Load Basic", 0, "Open System Menu from idle, suspend, return title, and continue."),
+            Preset(BattleTestPresetId.SaveAfterMovementCommit, "Save After Movement Commit", 0, "Move, Wait, suspend on the next Player idle, then resume."),
+            Preset(BattleTestPresetId.SaveAfterDamage, "Save After Damage", 0, "Damage an enemy, suspend, resume, and verify HP remains."),
+            Preset(BattleTestPresetId.SaveAfterUnitDeath, "Save After Unit Death", 0, "Kill a non-final unit, suspend, resume, and verify no tile occupancy."),
+            Preset(BattleTestPresetId.SaveAfterReinforcement, "Save After Reinforcement", 1, "Spawn reinforcement, suspend, resume, and verify it does not duplicate."),
+            Preset(BattleTestPresetId.SaveObjectiveProgress, "Save Objective Progress", 1, "Complete Reach, suspend, resume, then finish Eliminate."),
+            Preset(BattleTestPresetId.SaveProtectObjective, "Save Protect Objective", 0, "Suspend/resume while protected unit has damaged HP."),
+            Preset(BattleTestPresetId.ResumeAndFinishBattle, "Resume and Finish Battle", 1, "Resume a suspend and complete Victory."),
+            Preset(BattleTestPresetId.RestartBattle, "Restart Battle", 0, "Change HP/position, restart, and verify initial state."),
+            Preset(BattleTestPresetId.ReturnToTitle, "Return to Title", 0, "Return without saving and with Suspend and Return."),
+            Preset(BattleTestPresetId.CorruptSaveHandling, "Corrupt Save Handling", 0, "Use test save inspector to confirm corrupt saves do not crash."),
+            Preset(BattleTestPresetId.IncompatibleSaveHandling, "Incompatible Save Handling", 0, "Verify unsupported version warning and disabled load."),
+            Preset(BattleTestPresetId.CampaignSlotSaveLoad, "Campaign Slot Save Load", 0, "Save, overwrite, load, and delete campaign slots."),
+            Preset(BattleTestPresetId.ContinuePriority, "Continue Priority", 1, "Verify battle save wins over campaign save."),
+            Preset(BattleTestPresetId.FullSaveLoadSmoke, "Full Save Load Smoke", 2, "Run full save/load, continue, victory, campaign save flow."),
+            Preset(BattleTestPresetId.DemoBattle1Eliminate, "Demo Battle 1 - Eliminate", 0, "Demo Battle 1: Eliminate all enemies."),
+            Preset(BattleTestPresetId.DemoBattle2Protect, "Demo Battle 2 - Protect", 0, "Demo Battle 2: Protect the Healer.")
         };
 
         public static IReadOnlyList<BattleTestPresetMetadata> Presets => presets;
@@ -175,6 +192,7 @@ namespace SLG.Scenarios
                     AddWave(config, defs.Enemy, 2, 4, 2, 1);
                     break;
                 case BattleTestPresetId.FullScenarioSmoke:
+                case BattleTestPresetId.FullSaveLoadSmoke:
                     config.SkillLoadout = BattleSkillLoadoutPreset.AllCurrentSkills;
                     AddUnit(config, "healer", "Healer", BattleUnitRole.Healer, defs.Healer, UnitFaction.Player, 0, 1);
                     AddUnit(config, "mage", "Mage", BattleUnitRole.Mage, defs.Mage, UnitFaction.Player, 1, 2);
@@ -183,6 +201,37 @@ namespace SLG.Scenarios
                     config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.ProtectUnit, UnitRole = BattleUnitRole.Healer });
                     AddWave(config, defs.Enemy, 2, 4, 1, 1);
                     AddWave(config, defs.Enemy, 4, 4, 3, 1);
+                    break;
+                case BattleTestPresetId.SaveAfterReinforcement:
+                case BattleTestPresetId.ContinuePriority:
+                case BattleTestPresetId.ResumeAndFinishBattle:
+                    AddWave(config, defs.Enemy, 2, 4, 2, 1);
+                    break;
+                case BattleTestPresetId.SaveObjectiveProgress:
+                    ReachObjective(config, BattleUnitRole.Knight, 4, 2);
+                    AddWave(config, defs.Enemy, 3, 4, 1, 1);
+                    break;
+                case BattleTestPresetId.SaveProtectObjective:
+                    AddUnit(config, "healer", "Healer", BattleUnitRole.Healer, defs.Healer, UnitFaction.Player, 0, 1);
+                    config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.ProtectUnit, UnitRole = BattleUnitRole.Healer });
+                    break;
+                case BattleTestPresetId.DemoBattle1Eliminate:
+                    config.Width = 6;
+                    config.Height = 6;
+                    config.MapPreset = BattleMapPreset.OpenField;
+                    config.RequireEliminateAllEnemies = true;
+                    config.Objectives.Clear();
+                    config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.EliminateAllEnemies });
+                    break;
+                case BattleTestPresetId.DemoBattle2Protect:
+                    config.Width = 6;
+                    config.Height = 6;
+                    config.MapPreset = BattleMapPreset.OpenField;
+                    config.RequireEliminateAllEnemies = false;
+                    config.Objectives.Clear();
+                    AddUnit(config, "healer", "Healer", BattleUnitRole.Healer, defs.Healer, UnitFaction.Player, 0, 1);
+                    config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.ProtectUnit, UnitRole = BattleUnitRole.Healer });
+                    config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.SurviveRounds, RequiredRounds = 2 });
                     break;
             }
         }
@@ -260,7 +309,7 @@ namespace SLG.Scenarios
             {
                 UnitDefinition definition = ScriptableObject.CreateInstance<UnitDefinition>();
                 definition.name = name;
-                definition.ConfigureRuntime(name, name, hp, attack, defense, move, profile, minRange, maxRange, skills);
+                definition.ConfigureRuntime(name, name, hp, attack, defense, move, profile, minRange, maxRange, skills, name.ToLowerInvariant());
                 return definition;
             }
 

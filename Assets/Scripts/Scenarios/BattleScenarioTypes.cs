@@ -101,7 +101,24 @@ namespace SLG.Scenarios
         ReachAndEliminate,
         ProtectAndSurvive,
         ReinforcementSpawnOccupiedFallback,
-        FullScenarioSmoke
+        FullScenarioSmoke,
+        SaveLoadBasic,
+        SaveAfterMovementCommit,
+        SaveAfterDamage,
+        SaveAfterUnitDeath,
+        SaveAfterReinforcement,
+        SaveObjectiveProgress,
+        SaveProtectObjective,
+        ResumeAndFinishBattle,
+        RestartBattle,
+        ReturnToTitle,
+        CorruptSaveHandling,
+        IncompatibleSaveHandling,
+        CampaignSlotSaveLoad,
+        ContinuePriority,
+        FullSaveLoadSmoke,
+        DemoBattle1Eliminate,
+        DemoBattle2Protect
     }
 
     [Serializable]

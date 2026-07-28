@@ -108,6 +108,51 @@ namespace SLG.Scenarios
             battleEnded = true;
         }
 
+        public void RestoreRuntimeState(int currentRound, int completedRounds, IReadOnlyList<int> completedObjectiveIndices, IReadOnlyList<SLG.Saves.ReinforcementRuntimeSaveData> savedReinforcements)
+        {
+            if (config == null)
+            {
+                return;
+            }
+
+            battleEnded = false;
+            state.CurrentRound = Mathf.Max(1, currentRound);
+            state.CompletedRounds = Mathf.Max(0, completedRounds);
+            state.CompletedObjectives.Clear();
+            if (completedObjectiveIndices != null)
+            {
+                for (int i = 0; i < completedObjectiveIndices.Count; i++)
+                {
+                    int index = completedObjectiveIndices[i];
+                    if (index >= 0 && index < config.Objectives.Count)
+                    {
+                        state.CompletedObjectives.Add(config.Objectives[index]);
+                    }
+                }
+            }
+
+            for (int i = 0; i < config.Reinforcements.Count; i++)
+            {
+                BattleReinforcementWaveSetup wave = config.Reinforcements[i];
+                state.ReinforcementStates[wave] = ReinforcementWaveState.Pending;
+                if (savedReinforcements == null)
+                {
+                    continue;
+                }
+
+                for (int savedIndex = 0; savedIndex < savedReinforcements.Count; savedIndex++)
+                {
+                    if (savedReinforcements[savedIndex].WaveId == wave.Key)
+                    {
+                        state.ReinforcementStates[wave] = savedReinforcements[savedIndex].State;
+                        break;
+                    }
+                }
+            }
+
+            UpdateObjectiveUi();
+        }
+
         public int CountPendingRequiredReinforcements()
         {
             int count = 0;
