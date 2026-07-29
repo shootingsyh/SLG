@@ -60,7 +60,10 @@ namespace SLG.Scenarios
             Preset(BattleTestPresetId.ContinuePriority, "Continue Priority", 1, "Verify battle save wins over campaign save."),
             Preset(BattleTestPresetId.FullSaveLoadSmoke, "Full Save Load Smoke", 2, "Run full save/load, continue, victory, campaign save flow."),
             Preset(BattleTestPresetId.DemoBattle1Eliminate, "Demo Battle 1 - Eliminate", 0, "Demo Battle 1: Eliminate all enemies."),
-            Preset(BattleTestPresetId.DemoBattle2Protect, "Demo Battle 2 - Protect", 0, "Demo Battle 2: Protect the Healer.")
+            Preset(BattleTestPresetId.DemoBattle2Protect, "Demo Battle 2 - Protect", 0, "Demo Battle 2: Protect the Healer."),
+            Preset(BattleTestPresetId.TestSwiftVictory1, "Test Swift Victory 1", 0, "Test game: 1-hit victory."),
+            Preset(BattleTestPresetId.TestSwiftVictory2, "Test Swift Victory 2", 0, "Test game: 1-hit victory."),
+            Preset(BattleTestPresetId.TestSwiftVictory3, "Test Swift Victory 3", 0, "Test game: 1-hit victory.")
         };
 
         public static IReadOnlyList<BattleTestPresetMetadata> Presets => presets;
@@ -216,6 +219,7 @@ namespace SLG.Scenarios
                     config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.ProtectUnit, UnitRole = BattleUnitRole.Healer });
                     break;
                 case BattleTestPresetId.DemoBattle1Eliminate:
+                {
                     config.Width = 6;
                     config.Height = 6;
                     config.MapPreset = BattleMapPreset.OpenField;
@@ -223,6 +227,22 @@ namespace SLG.Scenarios
                     config.Objectives.Clear();
                     config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.EliminateAllEnemies });
                     break;
+                }
+                case BattleTestPresetId.TestSwiftVictory1:
+                case BattleTestPresetId.TestSwiftVictory2:
+                case BattleTestPresetId.TestSwiftVictory3:
+                {
+                    config.Units.Clear();
+                    AddUnit(config, "knight", "Knight", BattleUnitRole.Knight, defs.Knight, UnitFaction.Player, 0, 0);
+                    AddUnit(config, "enemy", "Weak Enemy", BattleUnitRole.Enemy, defs.Enemy, UnitFaction.Enemy, 1, 0);
+                    config.Units[config.Units.Count - 1].CurrentHealth = 1;
+                    config.PlayerFormation = BattleFormationPreset.KnightOnly;
+                    config.EnemyFormation = BattleFormationPreset.SingleMelee;
+                    config.RequireEliminateAllEnemies = true;
+                    config.Objectives.Clear();
+                    config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.EliminateAllEnemies });
+                    break;
+                }
                 case BattleTestPresetId.DemoBattle2Protect:
                     config.Width = 6;
                     config.Height = 6;

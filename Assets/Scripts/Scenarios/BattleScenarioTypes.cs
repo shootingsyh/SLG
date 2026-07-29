@@ -118,7 +118,10 @@ namespace SLG.Scenarios
         ContinuePriority,
         FullSaveLoadSmoke,
         DemoBattle1Eliminate,
-        DemoBattle2Protect
+        DemoBattle2Protect,
+        TestSwiftVictory1,
+        TestSwiftVictory2,
+        TestSwiftVictory3
     }
 
     [Serializable]

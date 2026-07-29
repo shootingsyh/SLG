@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using SLG.Core;
 using SLG.Saves;
 using SLG.Scenarios;
 using UnityEngine;
@@ -7,72 +8,130 @@ using UnityEngine.SceneManagement;
 
 namespace SLG.Shell
 {
-    public enum CampaignDestination
-    {
-        None,
-        ChapterResult,
-        Title
-    }
-
-    public static class CampaignSceneNames
-    {
-        public const string Title = "Title";
-        public const string ChapterResult = "ChapterResult";
-        public const string BattleTemplate = "BattleTestTemplate";
-    }
-
-    public static class CampaignBattleIds
-    {
-        public const string Battle1Id = "battle-1";
-        public const string Battle2Id = "battle-2";
-        public const string ChapterResultSaveLabel = "Chapter Complete";
-        public const string GameCompleteSaveLabel = "Game Complete";
-    }
-
     public sealed class CampaignFlowService
     {
         private readonly GameFlowService flow;
         private readonly SaveRepository repository;
-        private bool victoryProcessed;
-        private bool defeatProcessed;
+        private readonly ISceneLoader sceneLoader;
         private BattleTestPresetId currentBattlePreset;
+        private bool resultProcessing;
+        private bool resultProcessed;
+        private string expectedSceneName;
 
-        public CampaignFlowService(GameFlowService flow, SaveRepository repository)
+        public CampaignFlowService(GameFlowService flowService, SaveRepository saveRepository)
+            : this(flowService, saveRepository, new UnitySceneLoader())
         {
-            this.flow = flow;
-            this.repository = repository;
+        }
+
+        public CampaignFlowService(GameFlowService flowService, SaveRepository saveRepository, ISceneLoader loader)
+        {
+            flow = flowService;
+            repository = saveRepository;
+            sceneLoader = loader;
         }
 
         public void ConfigureBattle(BattleTestPresetId preset)
         {
-            currentBattlePreset = preset;
-            victoryProcessed = false;
-            defeatProcessed = false;
-        }
-
-        public CampaignDestination ResolveDestination()
-        {
-            return ResolveDestination(flow.DemoState);
-        }
-
-        public static CampaignDestination ResolveDestination(DemoFlowState demoState)
-        {
-            return demoState switch
+            if (!Enum.IsDefined(typeof(BattleTestPresetId), preset))
             {
-                DemoFlowState.Battle1Complete => CampaignDestination.ChapterResult,
-                DemoFlowState.Battle2Complete => CampaignDestination.ChapterResult,
-                _ => CampaignDestination.Title
-            };
+                return;
+            }
+
+            currentBattlePreset = preset;
+            resultProcessing = false;
+            resultProcessed = false;
+        }
+
+        public string ResolveDestination(DemoFlowState state)
+        {
+            switch (state)
+            {
+                case DemoFlowState.Battle1Complete:
+                case DemoFlowState.Battle2Complete:
+                    return CampaignSceneNames.ChapterResult.ToString();
+                default:
+                    return CampaignSceneNames.Title.ToString();
+            }
         }
 
         public bool TryProcessVictory()
         {
-            if (victoryProcessed)
+            if (resultProcessing || resultProcessed)
             {
-                return true;
+                return false;
             }
 
-            victoryProcessed = true;
+            if (flow.IsTransitionInProgress)
+            {
+                return false;
+            }
+
+            CampaignBattleDefinition definition = ResolveCurrentBattle();
+            if (definition == null)
+            {
+                flow.LastError = "Cannot resolve current battle definition for victory processing.";
+                return false;
+            }
+
+            resultProcessing = true;
+
+            try
+            {
+                CampaignSaveData data = BuildCampaignData(definition, DemoResultType.Victory);
+
+                SaveOperationResult saveOperation = repository.SaveCampaign(data, DemoSaveSlotId);
+                if (!saveOperation.Success)
+                {
+                    flow.LastError = $"Campaign save failed: {saveOperation.Message}";
+                    return false;
+                }
+
+                flow.DemoState = IsFinalBattle(definition) ? DemoFlowState.Battle2Complete : DemoFlowState.Battle1Complete;
+
+                GameShellServices.SetPendingCampaignData(data, IsFinalBattle(definition));
+
+                string destinationScene = CampaignSceneNames.ChapterResult.ToString();
+                bool transitionSucceeded = TryLoadScene(destinationScene, ShellScreen.ChapterResult);
+
+                resultProcessed = true;
+                return transitionSucceeded;
+            }
+            catch (Exception ex)
+            {
+                flow.LastError = $"Victory processing error: {ex.Message}";
+                resultProcessing = false;
+                return false;
+            }
+        }
+
+        public bool TryTransitionToTitle()
+        {
+            if (resultProcessing || resultProcessed)
+            {
+                return false;
+            }
+
+            if (flow.IsTransitionInProgress)
+            {
+                return false;
+            }
+
+            resultProcessing = true;
+            GameShellServices.Clear();
+            return TryLoadScene(CampaignSceneNames.Title.ToString(), ShellScreen.MainMenu);
+        }
+
+        public bool TryProcessDefeat()
+        {
+            if (resultProcessing || resultProcessed)
+            {
+                return false;
+            }
+
+            if (flow.IsTransitionInProgress)
+            {
+                return false;
+            }
 
             if (currentBattlePreset != BattleTestPresetId.DemoBattle1Eliminate &&
                 currentBattlePreset != BattleTestPresetId.DemoBattle2Protect)
@@ -80,90 +139,23 @@ namespace SLG.Shell
                 return false;
             }
 
-            DemoFlowState nextState = currentBattlePreset == BattleTestPresetId.DemoBattle1Eliminate
-                ? DemoFlowState.Battle1Complete
-                : DemoFlowState.Battle2Complete;
+            resultProcessing = true;
 
-            flow.DemoState = nextState;
-
-            string battleId = currentBattlePreset == BattleTestPresetId.DemoBattle1Eliminate
-                ? CampaignBattleIds.Battle1Id
-                : CampaignBattleIds.Battle2Id;
-            string battleName = currentBattlePreset == BattleTestPresetId.DemoBattle1Eliminate
-                ? "Demo Battle 1 - Eliminate"
-                : "Demo Battle 2 - Protect";
-
-            CampaignSaveData data = BuildCampaignData(battleId, battleName, nextState);
-
-            // Store data for ChapterResultController to handle user-initiated save
-            GameShellServices.SetPendingCampaignData(data, nextState == DemoFlowState.Battle2Complete);
-
-            return TryTransitionToDestination(ResolveDestination(nextState));
-        }
-
-        public bool TryProcessDefeat()
-        {
-            if (defeatProcessed)
+            try
             {
-                return true;
+                GameShellServices.SetPendingCampaignData(null, false);
+
+                resultProcessed = true;
+                resultProcessing = false;
+
+                return TryLoadScene(CampaignSceneNames.Title.ToString(), ShellScreen.MainMenu);
             }
-
-            defeatProcessed = true;
-            return TryTransitionToTitle();
-        }
-
-        private CampaignSaveData BuildCampaignData(string battleId, string battleName, DemoFlowState nextState)
-        {
-            CampaignSaveData data = new CampaignSaveData
+            catch (Exception ex)
             {
-                SlotId = "slot-01",
-                ChapterId = "chapter-1",
-                ChapterName = "Demo Campaign",
-                BattleId = battleId,
-                BattleName = battleName,
-                LastCompletedChapterId = "chapter-1",
-                NextChapterId = "chapter-2",
-                NextBattleId = battleId,
-                LastSelectedChapterId = "chapter-1",
-                FlowScreen = nextState,
-                UnlockedChapterIds = new List<string> { "chapter-1", "chapter-2" },
-                DemoCompleted = nextState == DemoFlowState.Battle2Complete
-            };
-
-            data.Metadata = new SaveMetadata
-            {
-                SaveType = SaveConstants.CampaignSaveType,
-                SlotId = "slot-01",
-                ChapterId = "chapter-1",
-                ChapterName = "Demo Campaign",
-                BattleId = battleId,
-                BattleName = battleName,
-                ProgressLabel = nextState == DemoFlowState.Battle1Complete
-                    ? CampaignBattleIds.ChapterResultSaveLabel
-                    : CampaignBattleIds.GameCompleteSaveLabel,
-                SavedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
-                FormatVersion = SaveConstants.FormatVersion
-            };
-
-            return data;
-        }
-
-        private bool TryTransitionToDestination(CampaignDestination destination)
-        {
-            switch (destination)
-            {
-                case CampaignDestination.ChapterResult:
-                    return TryLoadScene(CampaignSceneNames.ChapterResult, ShellScreen.ChapterResult);
-                case CampaignDestination.Title:
-                    return TryLoadScene(CampaignSceneNames.Title, ShellScreen.MainMenu);
-                default:
-                    return false;
+                flow.LastError = $"Defeat processing error: {ex.Message}";
+                resultProcessing = false;
+                return false;
             }
-        }
-
-        public bool TryTransitionToTitle()
-        {
-            return TryLoadScene(CampaignSceneNames.Title, ShellScreen.MainMenu);
         }
 
         private bool TryLoadScene(string sceneName, ShellScreen nextScreen)
@@ -173,22 +165,105 @@ namespace SLG.Shell
                 return false;
             }
 
-            flow.IsTransitionInProgress = true;
-            try
+            if (!sceneLoader.CanLoad(sceneName))
             {
-                flow.CurrentScreen = nextScreen;
-                SceneManager.LoadScene(sceneName, LoadSceneMode.Single);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                flow.LastError = ex.Message;
+                flow.LastError = $"Scene '{sceneName}' is not available in Build Settings.";
                 return false;
             }
-            finally
+
+            flow.IsTransitionInProgress = true;
+            flow.CurrentScreen = nextScreen;
+            expectedSceneName = sceneName;
+
+            sceneLoader.Load(sceneName, (success, error) =>
             {
-                flow.IsTransitionInProgress = false;
+                if (!success && !string.IsNullOrEmpty(error))
+                {
+                    flow.LastError = $"Scene load failed: {error}";
+                }
+
+                SceneManager.sceneLoaded += OnDestinationSceneLoaded;
+            });
+
+            return true;
+        }
+
+        private void OnDestinationSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            if (!string.Equals(scene.name, expectedSceneName, StringComparison.Ordinal))
+            {
+                return;
             }
+
+            SceneManager.sceneLoaded -= OnDestinationSceneLoaded;
+            expectedSceneName = null;
+            flow.IsTransitionInProgress = false;
+        }
+
+        private CampaignBattleDefinition ResolveCurrentBattle()
+        {
+            return CampaignBattleDefinitions.GetByPreset(currentBattlePreset);
+        }
+
+        private static bool IsFinalBattle(CampaignBattleDefinition definition)
+        {
+            return definition.IsFinalBattle;
+        }
+
+        private CampaignSaveData BuildCampaignData(CampaignBattleDefinition definition, DemoResultType result)
+        {
+            List<string> unlocked = new List<string>();
+            unlocked.Add("chapter-1");
+
+            if (definition.BattleId == CampaignBattleIds.Battle2Id || result == DemoResultType.Victory)
+            {
+                unlocked.Add("chapter-2");
+            }
+
+            CampaignSaveData data = new CampaignSaveData();
+            data.ChapterId = "chapter-1";
+            data.ChapterName = "Demo Campaign";
+            data.BattleId = definition.BattleId;
+            data.BattleName = definition.BattleName;
+            data.LastCompletedChapterId = "chapter-1";
+            data.NextChapterId = "chapter-2";
+            data.NextBattleId = definition.NextBattleId;
+            data.DemoCompleted = definition.IsFinalBattle && result == DemoResultType.Victory;
+            data.FlowScreen = GetFlowScreen(definition, result);
+            data.UnlockedChapterIds = unlocked;
+            data.Roster = new List<CampaignRosterEntry>();
+            data.Inventory = new List<CampaignInventoryEntry>();
+            data.Metadata = new SaveMetadata();
+            data.Metadata.SaveType = SaveConstants.CampaignSaveType;
+            data.Metadata.ChapterId = "chapter-1";
+            data.Metadata.BattleId = definition.BattleId;
+            data.Metadata.FormatVersion = SaveConstants.FormatVersion;
+            data.Metadata.SlotId = SavePathUtility.CampaignSlotFileName(DemoSaveSlotId);
+            return data;
+        }
+
+        private static DemoFlowState GetFlowScreen(CampaignBattleDefinition definition, DemoResultType result)
+        {
+            if (result != DemoResultType.Victory)
+            {
+                return DemoFlowState.NotStarted;
+            }
+
+            if (definition.IsFinalBattle)
+            {
+                return DemoFlowState.DemoComplete;
+            }
+
+            return DemoFlowState.Battle1Complete;
+        }
+
+        private static readonly int DemoSaveSlotId = 1;
+
+        public enum DemoResultType
+        {
+            None,
+            Victory,
+            Defeat
         }
     }
 }

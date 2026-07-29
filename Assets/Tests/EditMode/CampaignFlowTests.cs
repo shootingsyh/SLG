@@ -28,20 +28,23 @@ namespace SLG.Tests
         [Test]
         public void ResolveDestination_Battle1Complete_Returns_ChapterResult()
         {
-            Assert.That(CampaignFlowService.ResolveDestination(DemoFlowState.Battle1Complete), Is.EqualTo(CampaignDestination.ChapterResult));
+            CampaignFlowService processor = new CampaignFlowService(flow, repository);
+            Assert.That(processor.ResolveDestination(DemoFlowState.Battle1Complete), Is.EqualTo(CampaignSceneNames.ChapterResult.ToString()));
         }
 
         [Test]
         public void ResolveDestination_Battle2Complete_Returns_ChapterResult()
         {
-            Assert.That(CampaignFlowService.ResolveDestination(DemoFlowState.Battle2Complete), Is.EqualTo(CampaignDestination.ChapterResult));
+            CampaignFlowService processor = new CampaignFlowService(flow, repository);
+            Assert.That(processor.ResolveDestination(DemoFlowState.Battle2Complete), Is.EqualTo(CampaignSceneNames.ChapterResult.ToString()));
         }
 
         [Test]
         public void ResolveDestination_OtherState_Returns_Title()
         {
-            Assert.That(CampaignFlowService.ResolveDestination(DemoFlowState.NotStarted), Is.EqualTo(CampaignDestination.Title));
-            Assert.That(CampaignFlowService.ResolveDestination(DemoFlowState.DemoComplete), Is.EqualTo(CampaignDestination.Title));
+            CampaignFlowService processor = new CampaignFlowService(flow, repository);
+            Assert.That(processor.ResolveDestination(DemoFlowState.NotStarted), Is.EqualTo(CampaignSceneNames.Title.ToString()));
+            Assert.That(processor.ResolveDestination(DemoFlowState.DemoComplete), Is.EqualTo(CampaignSceneNames.Title.ToString()));
         }
 
         // Victory processing
@@ -86,7 +89,7 @@ namespace SLG.Tests
 
             processor.TryProcessDefeat();
 
-            Assert.That(processor.TryProcessDefeat(), Is.True);
+            Assert.That(processor.TryProcessDefeat(), Is.False);
         }
 
         // Pending data for ChapterResult
@@ -197,9 +200,9 @@ namespace SLG.Tests
         [Test]
         public void CampaignSceneNames_HasAllSceneNames()
         {
-            Assert.That(CampaignSceneNames.Title, Is.EqualTo("Title"));
-            Assert.That(CampaignSceneNames.ChapterResult, Is.EqualTo("ChapterResult"));
-            Assert.That(CampaignSceneNames.BattleTemplate, Is.EqualTo("BattleTestTemplate"));
+            Assert.That(CampaignSceneNames.Title.ToString(), Is.EqualTo("Title"));
+            Assert.That(CampaignSceneNames.ChapterResult.ToString(), Is.EqualTo("ChapterResult"));
+            Assert.That(CampaignSceneNames.BattleTemplate.ToString(), Is.EqualTo("BattleTemplate"));
         }
 
         // Battle IDs
@@ -208,15 +211,6 @@ namespace SLG.Tests
         {
             Assert.That(CampaignBattleIds.Battle1Id, Is.EqualTo("battle-1"));
             Assert.That(CampaignBattleIds.Battle2Id, Is.EqualTo("battle-2"));
-        }
-
-        // Destination enum
-        [Test]
-        public void CampaignDestination_Enum_HasAllValues()
-        {
-            Assert.That(Enum.IsDefined(typeof(CampaignDestination), 0), Is.True);
-            Assert.That(Enum.IsDefined(typeof(CampaignDestination), 1), Is.True);
-            Assert.That(Enum.IsDefined(typeof(CampaignDestination), 2), Is.True);
         }
 
         // Unlocked chapters

@@ -191,6 +191,10 @@ namespace SLG.Saves
 
         private static void FillCampaignMetadata(CampaignSaveData data, string slotId, string timestampUtc)
         {
+            string destScene = "ChapterResult";
+            if (!string.IsNullOrEmpty(data.NextBattleId) && data.GameId != "default")
+                destScene = "InterGame";
+
             data.Metadata = new SaveMetadata
             {
                 SaveType = SaveConstants.CampaignSaveType,
@@ -202,7 +206,9 @@ namespace SLG.Saves
                 ProgressLabel = string.IsNullOrEmpty(data.LastCompletedChapterId) ? "New Campaign" : $"After {data.LastCompletedChapterId}",
                 SavedAtUtc = timestampUtc ?? DateTime.UtcNow.ToString("O"),
                 VersionStatus = "Current",
-                FormatVersion = SaveConstants.FormatVersion
+                FormatVersion = SaveConstants.FormatVersion,
+                GameId = data.GameId,
+                DestinationScene = destScene
             };
         }
 

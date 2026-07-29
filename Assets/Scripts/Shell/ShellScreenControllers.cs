@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using SLG.Saves;
 using SLG.Scenarios;
 using UnityEngine;
@@ -11,7 +13,7 @@ namespace SLG.Shell
 
         public bool TryAdvance()
         {
-            if (advanced) { return false; }
+            if (advanced) return false;
             advanced = flow.TryAdvanceBoot();
             return advanced;
         }
@@ -49,20 +51,30 @@ namespace SLG.Shell
         private bool showNewGameWarning;
         private string newGameWarningText = string.Empty;
         private string message = string.Empty;
+#if UNITY_EDITOR
+        private bool showGameSelection;
+#endif
 
         private void Awake() => model = new MainMenuModel(GameShellServices.Repository);
 
         private void OnGUI()
         {
-            GUILayout.BeginArea(new Rect(40f, 40f, 320f, 420f), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(40f, 40f, 320f, 460f), GUI.skin.box);
+
             GUI.enabled = model.CanContinue;
             if (GUILayout.Button(model.ContinueLabel)) RunMenuAction(flow.TryContinue);
             GUI.enabled = true;
+
             if (GUILayout.Button("New Game")) TryStartNewGame();
+
             GUI.enabled = model.CanLoadGame;
             if (GUILayout.Button("Load Game")) showLoadSlots = !showLoadSlots;
             GUI.enabled = true;
             if (showLoadSlots) DrawLoadSlots();
+
+#if UNITY_EDITOR
+            if (GUILayout.Button("[DEV] Game Selection")) showGameSelection = !showGameSelection;
+#endif
             if (model.ShowTestLab && GUILayout.Button("Test Lab")) flow.TryLoadTestLab();
             if (GUILayout.Button("Quit"))
             {
@@ -74,6 +86,10 @@ namespace SLG.Shell
             }
             if (!string.IsNullOrEmpty(message)) GUILayout.Label(message);
             GUILayout.EndArea();
+
+#if UNITY_EDITOR
+            if (showGameSelection) DrawGameSelection();
+#endif
 
             if (showNewGameWarning)
             {
@@ -87,7 +103,6 @@ namespace SLG.Shell
                     showNewGameWarning = false;
                     RunMenuAction(flow.TryStartNewGame);
                 }
-
                 if (GUILayout.Button("No")) showNewGameWarning = false;
                 GUILayout.EndHorizontal();
                 GUILayout.EndArea();
@@ -115,7 +130,46 @@ namespace SLG.Shell
             }
         }
 
-        private void RunMenuAction(System.Func<bool> action)
+#if UNITY_EDITOR
+        private void DrawGameSelection()
+        {
+            Rect rect = new Rect(Screen.width * 0.2f, Screen.height * 0.15f, 350f, 280f);
+            GUILayout.BeginArea(rect, GUI.skin.box);
+
+            GUILayout.Label("Game Selection (Development)");
+            GUILayout.Label("Select a game to play.");
+
+            // Production game
+            GameDefinition prodGame = GameDefinitions.GetDefault();
+            if (prodGame != null)
+            {
+                GUI.enabled = true;
+                if (GUILayout.Button($"▶ {prodGame.DisplayName} ({prodGame.BattleCount} battles)"))
+                {
+                    showGameSelection = false;
+                    RunMenuAction(() => flow.TryStartGame(prodGame.GameId));
+                }
+            }
+
+            // Test games
+            GameDefinition testGame = GameDefinitions.Get("test-1");
+            if (testGame != null)
+            {
+                GUI.color = new Color(1f, 0.9f, 0.2f);
+                if (GUILayout.Button($"▶ {testGame.DisplayName} ({testGame.BattleCount} battles)"))
+                {
+                    showGameSelection = false;
+                    RunMenuAction(() => flow.TryStartGame(testGame.GameId));
+                }
+                GUI.color = Color.white;
+            }
+
+            if (GUILayout.Button("Back")) showGameSelection = false;
+            GUILayout.EndArea();
+        }
+#endif
+
+        private void RunMenuAction(Func<bool> action)
         {
             if (!action()) { message = flow.LastError; model.Refresh(); }
         }
@@ -138,6 +192,7 @@ namespace SLG.Shell
     public sealed class ChapterSelectController : MonoBehaviour
     {
         private readonly GameFlowService flow = new GameFlowService();
+
         private void OnGUI()
         {
             GUILayout.BeginArea(new Rect(40f, 40f, 260f, 160f), GUI.skin.box);
@@ -154,6 +209,7 @@ namespace SLG.Shell
         private bool isDemoComplete;
         private string message = string.Empty;
         private bool saved;
+        private readonly GameFlowService flow = new GameFlowService();
 
         private void Awake()
         {
@@ -221,81 +277,217 @@ namespace SLG.Shell
             GUILayout.FlexibleSpace();
             if (isDemoComplete)
             {
-                if (GUILayout.Button("Return to Title")) RunAction(ReturnToTitle);
+                if (GUILayout.Button("Return to Title")) ReturnToTitle();
             }
             else
             {
-                if (GUILayout.Button("Continue to Next Chapter")) RunAction(ContinueToNextChapter);
+                if (GUILayout.Button("Continue to Next Chapter")) ContinueToNextChapter();
             }
 
             GUILayout.EndArea();
         }
 
-        private bool ReturnToTitle()
+        private void ReturnToTitle()
         {
-            var flow = new GameFlowService();
-            return flow.TryReturnToTitle();
+            flow.TryReturnToTitle();
         }
 
-        private bool ContinueToNextChapter()
+        private void ContinueToNextChapter()
         {
-            var flow = new GameFlowService();
+            flow.TryContinueToNextBattle();
+        }
+
+        public bool TryContinueToNextBattle()
+        {
             return flow.TryContinueToNextBattle();
-        }
-
-        private void RunAction(System.Func<bool> action)
-        {
-            if (!action()) message = "Action failed. Please try again.";
         }
     }
 
-    public sealed class IntermissionController : MonoBehaviour
+    public sealed class InterGameController : MonoBehaviour
     {
-        private readonly GameFlowService flow = new GameFlowService();
+        private string gameId = string.Empty;
+        private string completedBattleCount = "0";
+        private string nextBattleId = string.Empty;
         private string message = string.Empty;
+        private readonly GameFlowService flow = new GameFlowService();
+        private bool saved;
+        private int completedCount;
 
         private void Awake()
         {
-            _ = GameShellServices.Repository.SaveCampaign(new CampaignSaveData { LastCompletedChapterId = "chapter-1", NextChapterId = "chapter-2" }, 1);
+            gameId = GameShellServices.ActiveGameId;
+            completedCount = 0;
+            ParseGameState();
         }
 
-        private void OnGUI()
+        private void ParseGameState()
         {
-            GUILayout.BeginArea(new Rect(Screen.width * 0.2f, Screen.height * 0.25f, Screen.width * 0.6f, 200f), GUI.skin.box);
-            GUILayout.Label("Intermission");
-            GUILayout.Label("Demo Battle 1 Complete");
-            GUI.enabled = true;
-            for (int i = 1; i <= SaveConstants.ManualCampaignSlotCount; i++)
+            if (string.IsNullOrEmpty(gameId))
+                return;
+
+            CampaignSaveData progress = LoadGameProgress(gameId);
+            if (progress != null)
             {
-                if (GUILayout.Button($"Save Slot {i}"))
+                completedCount = ParseCompletedCount(progress);
+                nextBattleId = progress.NextBattleId ?? string.Empty;
+            }
+        }
+
+        private static CampaignSaveData LoadGameProgress(string gameId)
+        {
+            foreach (SaveSlotInfo slot in GameShellServices.Repository.ListCampaignSlots())
+            {
+                if (slot.CanLoad && slot.Metadata != null && slot.Metadata.GameId == gameId)
                 {
-                    SaveOperationResult result = GameShellServices.Repository.SaveCampaign(new CampaignSaveData { LastCompletedChapterId = "chapter-1", NextChapterId = "chapter-2" }, i);
-                    message = result.Message;
+                    GameShellServices.Repository.TryLoadCampaign(slot.FileName, out CampaignSaveData data, out _);
+                    return data;
                 }
             }
-            if (GUILayout.Button("Continue to Next Battle")) RunAction(flow.TryContinueToNextBattle);
-            if (!string.IsNullOrEmpty(message)) GUILayout.Label(message);
-            GUILayout.EndArea();
+            return null;
         }
 
-        private void RunAction(System.Func<bool> action)
+        private static int ParseCompletedCount(CampaignSaveData data)
         {
-            if (!action()) message = flow.LastError;
+            if (data == null) return 0;
+            int count = 0;
+            if (!string.IsNullOrEmpty(data.LastCompletedChapterId))
+                count++;
+            if (!string.IsNullOrEmpty(data.NextChapterId) && data.NextChapterId != "chapter-1")
+                count++;
+            return count;
         }
-    }
-
-    public sealed class DemoCompleteController : MonoBehaviour
-    {
-        private readonly GameFlowService flow = new GameFlowService();
 
         private void OnGUI()
         {
-            GUILayout.BeginArea(new Rect(Screen.width * 0.25f, Screen.height * 0.3f, Screen.width * 0.5f, 150f), GUI.skin.box);
-            GUILayout.Label("Congratulations!");
-            GUILayout.Label("Demo Complete");
+            if (string.IsNullOrEmpty(gameId))
+            {
+                GUILayout.BeginArea(new Rect(Screen.width * 0.2f, Screen.height * 0.35f, Screen.width * 0.6f, 100f), GUI.skin.box);
+                GUILayout.Label("Inter-Game");
+                GUILayout.Label("No active game. Returning to title.");
+                if (GUILayout.Button("Return to Title")) flow.TryLoadTitleScene();
+                GUILayout.EndArea();
+                return;
+            }
+
+            GameDefinition gameDef = GameDefinitions.Get(gameId);
+            string gameName = gameDef != null ? gameDef.DisplayName : "Unknown Game";
+
+            GUILayout.BeginArea(new Rect(Screen.width * 0.2f, Screen.height * 0.2f, Screen.width * 0.6f, 300f), GUI.skin.box);
+
+            GUILayout.Label("Inter-Game");
+            GUILayout.Label($"Game: {gameName}");
+            GUILayout.Label($"Completed Battles: {completedCount}");
+
+            GameBattleDefinition nextBattle = null;
+            if (gameDef != null)
+            {
+                nextBattle = gameDef.GetNextBattle(completedCount);
+                if (nextBattle != null)
+                {
+                    GUILayout.Label($"Next Battle: {nextBattle.BattleName}");
+                    GUILayout.Label($"Battle ID: {nextBattle.BattleId}");
+                }
+            }
+
+            GUILayout.Space(16f);
+            GUILayout.Label("Save Campaign Progress:");
+            GUILayout.BeginHorizontal();
+            for (int i = 1; i <= SaveConstants.ManualCampaignSlotCount; i++)
+            {
+                if (GUILayout.Button($"Slot {i}")) SaveCampaignToSlot(i);
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(8f);
+            if (saved) GUILayout.Label("Campaign Saved!");
+            if (!string.IsNullOrEmpty(message)) GUILayout.Label(message);
+
             GUILayout.FlexibleSpace();
+            GUILayout.BeginHorizontal();
+            if (nextBattle != null)
+            {
+                if (GUILayout.Button("Next Battle ▶"))
+                {
+                    flow.TryStartGame(gameId);
+                }
+            }
+
+            if (completedCount >= 0)
+            {
+                if (nextBattle == null && gameDef != null && completedCount >= gameDef.BattleCount)
+                {
+                    if (GUILayout.Button("Game Complete - Return to Title"))
+                        flow.TryCompleteTestGame();
+                }
+            }
+
             if (GUILayout.Button("Return to Title")) flow.TryLoadTitleScene();
+            GUILayout.EndHorizontal();
+
             GUILayout.EndArea();
         }
+
+        private void SaveCampaignToSlot(int slot)
+        {
+            CampaignSaveData data = BuildCampaignSave();
+            SaveOperationResult result = GameShellServices.Repository.SaveCampaign(data, slot);
+            message = result.Message;
+            if (result.Success)
+            {
+                saved = true;
+                GameShellServices.Repository.DeleteBattleSave();
+            }
+        }
+
+        private CampaignSaveData BuildCampaignSave()
+        {
+            CampaignSaveData data = new CampaignSaveData
+            {
+                GameId = gameId,
+                LastCompletedChapterId = $"battle-{completedCount}",
+                NextChapterId = ParseNextBattleChapter(),
+                NextBattleId = GetNextBattleId(),
+                FlowScreen = DemoFlowState.Battle1Complete,
+                UnlockedChapterIds = new List<string> { "chapter-1" }
+            };
+
+            GameDefinition def = GameDefinitions.Get(gameId);
+            if (def != null)
+            {
+                for (int i = 0; i <= completedCount && i < def.BattleCount; i++)
+                {
+                    GameBattleDefinition battle = def.GetBattleAt(i);
+                    if (battle != null)
+                        data.LastCompletedChapterId = battle.BattleId;
+                }
+
+                GameBattleDefinition next = def.GetNextBattle(completedCount);
+                if (next != null)
+                    data.NextBattleId = next.BattleId;
+            }
+
+            return data;
+        }
+
+        private string ParseNextBattleChapter()
+        {
+            GameDefinition def = GameDefinitions.Get(gameId);
+            if (def == null) return "chapter-1";
+            GameBattleDefinition next = def.GetNextBattle(completedCount);
+            if (next == null) return "chapter-complete";
+            return $"chapter-{completedCount + 1}";
+        }
+
+        private string GetNextBattleId()
+        {
+            GameDefinition def = GameDefinitions.Get(gameId);
+            if (def == null) return string.Empty;
+            GameBattleDefinition next = def.GetNextBattle(completedCount);
+            return next != null ? next.BattleId : string.Empty;
+        }
+
+        public GameDefinition GetCurrentGameDefinition() => GameDefinitions.Get(gameId);
+        public int GetCompletedBattleCount() => completedCount;
+        public string GetGameId() => gameId;
     }
 }

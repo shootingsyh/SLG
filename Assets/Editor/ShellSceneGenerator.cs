@@ -19,6 +19,7 @@ namespace SLG.EditorTools
             CreateScene("Title", typeof(TitleController));
             CreateScene("ChapterSelect", typeof(ChapterSelectController));
             CreateScene("ChapterResult", typeof(ChapterResultController));
+            CreateScene("InterGame", typeof(InterGameController));
             UpdateBuildSettings();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -54,6 +55,7 @@ namespace SLG.EditorTools
                 "Assets/Scenes/Title.unity",
                 "Assets/Scenes/ChapterSelect.unity",
                 "Assets/Scenes/ChapterResult.unity",
+                "Assets/Scenes/InterGame.unity",
                 "Assets/Scenes/BattleTestTemplate.unity",
                 "Assets/Scenes/BattleTestLab.unity"
             };

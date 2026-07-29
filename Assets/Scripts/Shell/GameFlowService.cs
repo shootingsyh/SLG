@@ -1,5 +1,7 @@
+using System;
 using SLG.Saves;
 using SLG.Scenarios;
+using SLG.Shell;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -12,8 +14,23 @@ namespace SLG.Shell
         LoadGame,
         ChapterSelect,
         ChapterResult,
+        InterGame,
         Battle,
         TestLab
+    }
+
+    public enum CampaignSceneNames
+    {
+        Title,
+        ChapterResult,
+        InterGame,
+        BattleTemplate
+    }
+
+    public static class CampaignBattleIds
+    {
+        public const string Battle1Id = "battle-1";
+        public const string Battle2Id = "battle-2";
     }
 
     public sealed class GameFlowService
@@ -26,19 +43,19 @@ namespace SLG.Shell
             set => GameShellServices.SetDemoState(value);
         }
         public string LastError { get; set; } = string.Empty;
+        private int _testGameCompletedBattleCount;
 
         public bool TryAdvanceBoot()
         {
             if (IsTransitionInProgress || CurrentScreen != ShellScreen.Boot)
-            {
                 return false;
-            }
-
             return TryLoadScene("Title", ShellScreen.MainMenu);
         }
 
         public bool TryLoadTitleScene()
         {
+            GameShellServices.Repository.DeleteBattleSave();
+            GameShellServices.Clear();
             return TryLoadScene("Title", ShellScreen.MainMenu);
         }
 
@@ -47,67 +64,135 @@ namespace SLG.Shell
             return TryLoadScene("ChapterSelect", ShellScreen.ChapterSelect);
         }
 
+        /// <summary>Start the production campaign (battle 1).</summary>
         public bool TryStartNewGame()
         {
-            DemoState = DemoFlowState.NotStarted;
-            return TryStartDemoBattle1();
+            return TryStartGame("default");
         }
 
-        public bool TryStartDemoBattle1()
+        /// <summary>Start a game by its definition ID.</summary>
+        public bool TryStartGame(string gameId)
         {
             if (IsTransitionInProgress)
             {
                 return false;
             }
 
-            BattleTestLabSession.Store(BattleTestPresetId.DemoBattle1Eliminate, BattleTestPresetLibrary.Create(BattleTestPresetId.DemoBattle1Eliminate));
+            GameDefinition gameDef = GameDefinitions.Get(gameId);
+            if (gameDef == null)
+            {
+                LastError = $"Unknown game ID: {gameId}";
+                return false;
+            }
+
+            GameBattleDefinition firstBattle = gameDef.GetFirstBattle();
+            if (firstBattle == null)
+            {
+                LastError = $"Game '{gameId}' has no battles defined.";
+                return false;
+            }
+
+            GameShellServices.ActiveGameId = gameId;
+            GameShellServices.Clear();
+            DemoState = DemoFlowState.NotStarted;
+            _testGameCompletedBattleCount = 0;
+
+            BattleTestLabSession.Store(firstBattle.Preset, BattleTestPresetLibrary.Create(firstBattle.Preset));
             return TryLoadScene("BattleTestTemplate", ShellScreen.Battle);
         }
 
-        public bool TryContinueToChapterResult()
-        {
-            GameShellServices.Repository.DeleteBattleSave();
-            return TryLoadScene("ChapterResult", ShellScreen.ChapterResult);
-        }
-
+        /// <summary>Continue to the next battle in the production campaign.</summary>
         public bool TryContinueToNextBattle()
         {
             if (IsTransitionInProgress || DemoState != DemoFlowState.Battle1Complete)
-            {
                 return false;
-            }
 
             DemoState = DemoFlowState.Battle2Complete;
-            return TryStartDemoBattle2();
-        }
-
-        public bool TryReturnToTitle()
-        {
-            GameShellServices.Repository.DeleteBattleSave();
-            GameShellServices.Clear();
-            return TryLoadTitleScene();
-        }
-
-        public bool TryStartDemoBattle2()
-        {
-            if (IsTransitionInProgress)
-            {
-                return false;
-            }
-
             BattleTestLabSession.Store(BattleTestPresetId.DemoBattle2Protect, BattleTestPresetLibrary.Create(BattleTestPresetId.DemoBattle2Protect));
             return TryLoadScene("BattleTestTemplate", ShellScreen.Battle);
         }
 
+        /// <summary>Mark the production demo as complete and return to title.</summary>
         public bool TryCompleteDemo()
         {
             if (IsTransitionInProgress || DemoState != DemoFlowState.Battle2Complete)
+                return false;
+
+            DemoState = DemoFlowState.DemoComplete;
+            GameShellServices.Repository.DeleteBattleSave();
+            return TryLoadScene("Title", ShellScreen.MainMenu);
+        }
+
+        /// <summary>After winning a battle in the test game, go to the Inter-Game scene.</summary>
+        public bool TryTransitionToInterGame(int completedBattleCount)
+        {
+            if (IsTransitionInProgress)
             {
                 return false;
             }
 
-            DemoState = DemoFlowState.DemoComplete;
+            string gameId = GameShellServices.ActiveGameId;
+            GameDefinition gameDef = GameDefinitions.Get(gameId);
+            if (gameDef == null)
+            {
+                LastError = $"Cannot resolve game definition for ID: {gameId}";
+                return false;
+            }
+
+            _testGameCompletedBattleCount = completedBattleCount;
+
+            GameShellServices.SetInterGameState(
+                gameId,
+                GetCompletedBattleId(completedBattleCount),
+                GetNextBattleId(gameDef, completedBattleCount));
+
+            DemoState = DemoFlowState.Battle1Complete;
+
+            return TryLoadScene("InterGame", ShellScreen.InterGame);
+        }
+
+        /// <summary>From the Inter-Game screen, launch the next battle.</summary>
+        public bool TryNextBattle()
+        {
+            if (IsTransitionInProgress)
+            {
+                return false;
+            }
+
+            string gameId = GameShellServices.ActiveGameId;
+            GameDefinition gameDef = GameDefinitions.Get(gameId);
+            if (gameDef == null)
+            {
+                LastError = $"Cannot resolve game definition for next battle: {gameId}";
+                return false;
+            }
+
+            GameBattleDefinition nextBattle = gameDef.GetNextBattle(_testGameCompletedBattleCount);
+            if (nextBattle == null)
+            {
+                LastError = "No next battle available.";
+                return false;
+            }
+
+            BattleTestLabSession.Store(nextBattle.Preset, BattleTestPresetLibrary.Create(nextBattle.Preset));
+            return TryLoadScene("BattleTestTemplate", ShellScreen.Battle);
+        }
+
+        /// <summary>Mark the test game as complete and return to title.</summary>
+        public bool TryCompleteTestGame()
+        {
+            if (IsTransitionInProgress)
+            {
+                return false;
+            }
+
             GameShellServices.Repository.DeleteBattleSave();
+            GameShellServices.Clear();
+            return TryLoadScene("Title", ShellScreen.MainMenu);
+        }
+
+        public bool TryReturnToTitle()
+        {
             return TryLoadTitleScene();
         }
 
@@ -129,22 +214,30 @@ namespace SLG.Shell
                 }
 
                 GameShellServices.SetPendingBattleSave(battle);
+
+                if (!string.IsNullOrEmpty(battle.GameId))
+                    GameShellServices.ActiveGameId = battle.GameId;
+
                 return TryLoadScene("BattleTestTemplate", ShellScreen.Battle);
             }
 
             if (resolution.Slot != null && resolution.Slot.Metadata != null)
             {
-                DemoFlowState savedDemoState = resolution.Slot.Metadata.FlowScreen;
-                if (savedDemoState == DemoFlowState.Battle1Complete)
+                string gameId = resolution.Slot.Metadata.GameId;
+                if (!string.IsNullOrEmpty(gameId))
+                    GameShellServices.ActiveGameId = gameId;
+
+                string destScene = resolution.Slot.Metadata.DestinationScene;
+                if (destScene == "InterGame")
                 {
-                    DemoState = DemoFlowState.Battle1Complete;
-                    return TryLoadScene("ChapterResult", ShellScreen.ChapterResult);
+                    return TryLoadScene("InterGame", ShellScreen.InterGame);
                 }
 
-                if (savedDemoState == DemoFlowState.Battle2Complete || savedDemoState == DemoFlowState.DemoComplete)
+                DemoFlowState savedDemoState = resolution.Slot.Metadata.FlowScreen;
+                if (savedDemoState == DemoFlowState.Battle1Complete
+                    || savedDemoState == DemoFlowState.Battle2Complete
+                    || savedDemoState == DemoFlowState.DemoComplete)
                 {
-                    DemoState = DemoFlowState.Battle2Complete;
-                    GameShellServices.SetPendingCampaignData(null, true);
                     return TryLoadScene("ChapterResult", ShellScreen.ChapterResult);
                 }
             }
@@ -154,13 +247,16 @@ namespace SLG.Shell
 
         public bool TryLoadCampaignSave(string fileName)
         {
-            if (!GameShellServices.Repository.TryLoadCampaign(fileName, out CampaignSaveData campaign, out SaveSlotInfo info))
+            if (!GameShellServices.Repository.TryLoadCampaign(fileName, out CampaignSaveData campaign, out _))
             {
-                LastError = info != null && !string.IsNullOrEmpty(info.Error) ? info.Error : "Campaign save could not be loaded.";
+                LastError = "Campaign save could not be loaded.";
                 return false;
             }
 
-            BattleTestPresetId preset = string.IsNullOrEmpty(campaign.NextChapterId) || campaign.NextChapterId == "chapter-1" ? BattleTestPresetId.EliminateNoReinforcements : BattleTestPresetId.FullScenarioSmoke;
+            if (!string.IsNullOrEmpty(campaign.GameId))
+                GameShellServices.ActiveGameId = campaign.GameId;
+
+            BattleTestPresetId preset = ResolvePresetId(campaign);
             BattleTestLabSession.Store(preset, BattleTestPresetLibrary.Create(preset));
             return TryLoadScene("BattleTestTemplate", ShellScreen.Battle);
         }
@@ -170,9 +266,37 @@ namespace SLG.Shell
             return TryLoadScene("BattleTestLab", ShellScreen.TestLab);
         }
 
-        public bool TryOpenChapterResult(bool victory)
+        private static BattleTestPresetId ResolvePresetId(CampaignSaveData campaign)
         {
-            return TryLoadScene("ChapterResult", ShellScreen.ChapterResult);
+            string nextId = campaign.NextBattleId;
+            if (string.IsNullOrEmpty(nextId))
+                return BattleTestPresetId.DemoBattle1Eliminate;
+
+            CampaignBattleDefinition def = CampaignBattleDefinitions.GetByBattleId(nextId);
+            if (def != null)
+                return def.Preset;
+
+            GameDefinition game = GameDefinitions.Get(campaign.GameId);
+            if (game != null)
+            {
+                GameBattleDefinition battle = game.GetBattleById(nextId);
+                if (battle != null)
+                    return battle.Preset;
+            }
+
+            return BattleTestPresetId.DemoBattle1Eliminate;
+        }
+
+        private static string GetCompletedBattleId(int completedCount)
+        {
+            return completedCount > 0 ? $"battle-{completedCount}" : string.Empty;
+        }
+
+        private static string GetNextBattleId(GameDefinition gameDef, int completedCount)
+        {
+            GameBattleDefinition next = gameDef.GetNextBattle(completedCount);
+            if (next == null) return null;
+            return next.BattleId;
         }
 
         private bool TryLoadScene(string sceneName, ShellScreen nextScreen)
@@ -191,7 +315,7 @@ namespace SLG.Shell
                 LastError = string.Empty;
                 return true;
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 LastError = ex.Message;
                 return false;

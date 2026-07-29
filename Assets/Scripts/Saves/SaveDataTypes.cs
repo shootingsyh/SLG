@@ -78,6 +78,8 @@ namespace SLG.Saves
         public int FormatVersion;
         public int Round;
         public DemoFlowState FlowScreen;
+        public string GameId = string.Empty;
+        public string DestinationScene = string.Empty;
     }
 
     [Serializable]
@@ -85,6 +87,7 @@ namespace SLG.Saves
     {
         public string SlotId;
         public string RunId = Guid.NewGuid().ToString("N").Substring(0, 8);
+        public string GameId = string.Empty;
         public string ChapterId = "chapter-1";
         public string ChapterName;
         public string BattleId;
@@ -106,6 +109,7 @@ namespace SLG.Saves
     public sealed class BattleSaveData
     {
         public string RunId;
+        public string GameId = string.Empty;
         public string ScenarioId;
         public string ChapterId = "chapter-1";
         public string ChapterName;
