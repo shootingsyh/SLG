@@ -24,6 +24,9 @@ namespace SLG.Units
         [SerializeField] private Tile occupiedTile;
         [SerializeField] private UnitSelectionController selectionController;
         [SerializeField] private float movementSpeed = 4f;
+
+        /// <summary>Speed at which the unit moves (units per second)</summary>
+        public float MovementSpeed => movementSpeed;
         [SerializeField] private float tileHeightOffset = 0.55f;
 
         [Header("Runtime Debug")]
@@ -48,7 +51,32 @@ namespace SLG.Units
         [SerializeField] private Color attackTargetColor = new Color(1f, 0.45f, 0.15f, 1f);
         [SerializeField] private Color previewTargetColor = new Color(1f, 0.85f, 0.15f, 1f);
         [SerializeField] private Color takingDamageColor = Color.white;
-        [SerializeField] private float actedBrightness = 0.45f;
+        [SerializeField] private float actedBrightness = 0.6f;
+
+        [Header("Selection Ring")]
+        [Tooltip("Brightness factor for the selection ring")]
+        [SerializeField] private float selectionRingBrightness = 1.2f;
+        [Tooltip("Ring pulse period in seconds")]
+        [SerializeField] private float selectionRingPulsePeriod = 0.9f;
+        [Tooltip("Ring pulse amplitude")]
+        [Range(0f, 0.3f)]
+        [SerializeField] private float selectionRingPulseAmplitude = 0.15f;
+
+        [Header("Combat Feedback")]
+        [Tooltip("Lunge distance as fraction of tile")]
+        [Range(0.1f, 0.2f)]
+        [SerializeField] private float lungeFraction = 0.15f;
+        [Tooltip("Attacker lunge total duration in seconds")]
+        [SerializeField] private float lungeDuration = 0.16f;
+        [Tooltip("Damage flash duration for the target")]
+        [SerializeField] private float damageFlashDuration = 0.1f;
+        [Tooltip("HP bar change animation duration")]
+        [SerializeField] private float hpBarAnimDuration = 0.25f;
+        [Tooltip("Duration for floating damage numbers to display (seconds)")]
+        [SerializeField]
+        private float floatingDamageDuration = 0.6f;
+        [Tooltip("Deceased fade duration")]
+        [SerializeField] private float deathFadeDuration = 0.25f;
 
         private Renderer unitRenderer;
         private MaterialPropertyBlock propertyBlock;
@@ -60,6 +88,16 @@ namespace SLG.Units
         private bool isTakingDamage;
         private bool isDead;
         private TextMesh healthText;
+        private GameObject selectionRing;
+        private Renderer selectionRingRenderer;
+        private MaterialPropertyBlock ringBlock;
+        private float selectionRingPulseTime;
+        private float hpBarAnimProgress;
+        private int hpBarAnimFrom;
+        private int hpBarAnimTo;
+        private bool isHpBarAnimating;
+        private TextMesh floatingDamageText;
+        private Coroutine floatingDamageCoroutine;
 
         public UnitDefinition Definition => unitDefinition;
         public string DisplayName => unitDefinition != null ? unitDefinition.DisplayName : fallbackDisplayName;
@@ -110,6 +148,7 @@ namespace SLG.Units
             gameObject.SetActive(!isDead);
             UpdateHealthDisplay();
             RefreshVisualState();
+            UpdateSelectionRing();
         }
 
         public void PlaceOnTile(Tile tile)
@@ -165,7 +204,12 @@ namespace SLG.Units
                 return false;
             }
 
+            int previousHealth = currentHealth;
             currentHealth = Mathf.Max(0, currentHealth - Mathf.Max(0, damage));
+            
+            // Start HP bar animation
+            StartHpBarAnimation(previousHealth, currentHealth);
+            
             UpdateHealthDisplay();
             StartCoroutine(DamageFlashRoutine());
 
@@ -187,6 +231,9 @@ namespace SLG.Units
 
             int previousHealth = currentHealth;
             currentHealth = Mathf.Min(MaxHealth, currentHealth + healing);
+            
+            StartHpBarAnimation(previousHealth, currentHealth);
+            
             UpdateHealthDisplay();
             RefreshVisualState();
             return currentHealth - previousHealth;
@@ -196,6 +243,7 @@ namespace SLG.Units
         {
             isSelected = selected;
             RefreshVisualState();
+            UpdateSelectionRing();
         }
 
         public void SetHasActed(bool acted)
@@ -212,13 +260,52 @@ namespace SLG.Units
             RefreshVisualState();
         }
 
+        /// <summary>Show a floating damage number above this unit</summary>
+        public void PlayFloatingDamage(int damage, float duration = -1f)
+        {
+            if (duration <= 0f)
+                duration = floatingDamageDuration;
+
+            if (floatingDamageCoroutine != null)
+                StopCoroutine(floatingDamageCoroutine);
+            floatingDamageCoroutine = StartCoroutine(FloatingDamageRoutine(damage, duration));
+        }
+
         private void Awake()
         {
             CacheRenderer();
             EnsureHealthDisplay();
+            EnsureSelectionRing();
             ApplyDefinitionVisuals();
             InitializeHealth();
             RefreshVisualState();
+        }
+
+        private void Update()
+        {
+            // Update selection ring pulse
+            if (selectionRing != null && selectionRing.activeSelf)
+            {
+                selectionRingPulseTime += Time.deltaTime;
+                float period = selectionRingPulsePeriod > 0.01f ? selectionRingPulsePeriod : 0.9f;
+                float pulse = Mathf.PingPong(selectionRingPulseTime, period) / period;
+                float amplitude = selectionRingPulseAmplitude > 0f ? selectionRingPulseAmplitude : 0.15f;
+                float scaleMultiplier = 1f + pulse * amplitude;
+                Vector3 baseScale = new Vector3(0.6f, 0.05f, 0.6f) * scaleMultiplier;
+                selectionRing.transform.localScale = baseScale;
+            }
+
+            // HP bar animation
+            if (isHpBarAnimating)
+            {
+                hpBarAnimProgress += Time.deltaTime / Mathf.Max(0.001f, hpBarAnimDuration);
+                if (hpBarAnimProgress >= 1f)
+                {
+                    hpBarAnimProgress = 1f;
+                    isHpBarAnimating = false;
+                }
+                UpdateHealthDisplay();
+            }
         }
 
         private void OnMouseDown()
@@ -255,6 +342,14 @@ namespace SLG.Units
                 float duration = distance / Mathf.Max(0.01f, movementSpeed);
                 float elapsed = 0f;
 
+                // Face direction of travel
+                Vector3 direction = (end - start).normalized;
+                if (direction.x != 0f || direction.z != 0f)
+                {
+                    Quaternion targetRotation = Quaternion.LookRotation(direction);
+                    transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, 0.5f);
+                }
+
                 while (elapsed < duration)
                 {
                     elapsed += Time.deltaTime;
@@ -279,21 +374,26 @@ namespace SLG.Units
 
             Vector3 start = transform.position;
             Vector3 direction = (defender.transform.position - start).normalized;
-            Vector3 lunge = start + direction * 0.18f;
+            // Lunge by lungeFraction of tile size
+            float lungeDistance = lungeFraction;
+            Vector3 lunge = start + direction * lungeDistance;
             float elapsed = 0f;
+            float halfDuration = lungeDuration * 0.5f;
 
-            while (elapsed < 0.08f)
+            // Lunge toward target
+            while (elapsed < halfDuration)
             {
                 elapsed += Time.deltaTime;
-                transform.position = Vector3.Lerp(start, lunge, Mathf.Clamp01(elapsed / 0.08f));
+                transform.position = Vector3.Lerp(start, lunge, Mathf.Clamp01(elapsed / halfDuration));
                 yield return null;
             }
 
+            // Return
             elapsed = 0f;
-            while (elapsed < 0.08f)
+            while (elapsed < halfDuration)
             {
                 elapsed += Time.deltaTime;
-                transform.position = Vector3.Lerp(lunge, start, Mathf.Clamp01(elapsed / 0.08f));
+                transform.position = Vector3.Lerp(lunge, start, Mathf.Clamp01(elapsed / halfDuration));
                 yield return null;
             }
 
@@ -307,9 +407,64 @@ namespace SLG.Units
         {
             isTakingDamage = true;
             RefreshVisualState();
-            yield return new WaitForSeconds(0.12f);
+            yield return new WaitForSeconds(damageFlashDuration);
             isTakingDamage = false;
             RefreshVisualState();
+        }
+
+        private IEnumerator FloatingDamageRoutine(int damage, float duration)
+        {
+            if (floatingDamageText == null)
+            {
+                floatingDamageText = EnsureFloatingDamageDisplay();
+            }
+
+            if (floatingDamageText != null)
+            {
+                float displayColor = faction == UnitFaction.Player ? new Color(1f, 0.2f, 0.2f, 1f).r : new Color(1f, 0.6f, 0.2f, 1f).r;
+                floatingDamageText.text = damage.ToString();
+                floatingDamageText.color = new Color(1f, 0.2f, 0.1f, 1f);
+                floatingDamageText.gameObject.SetActive(true);
+                
+                // Reset position
+                floatingDamageText.transform.localPosition = new Vector3(0f, 1.5f, 0f);
+                floatingDamageText.transform.localRotation = Quaternion.identity;
+
+                float elapsed = 0f;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = elapsed / duration;
+                    float yOffset = 1.5f + t * 0.4f;
+                    float alpha = 1f - t;
+                    floatingDamageText.transform.localPosition = new Vector3(0f, yOffset, 0f);
+                    floatingDamageText.color = new Color(1f, 0.2f, 0.1f, alpha);
+                    yield return null;
+                }
+                
+                floatingDamageText.gameObject.SetActive(false);
+            }
+
+            floatingDamageCoroutine = null;
+        }
+
+        private TextMesh EnsureFloatingDamageDisplay()
+        {
+            Transform existing = transform.Find("Floating Damage");
+            if (existing == null)
+            {
+                GameObject floater = new GameObject("Floating Damage");
+                floater.transform.SetParent(transform, false);
+                var textMesh = floater.AddComponent<TextMesh>();
+                textMesh.anchor = TextAnchor.MiddleCenter;
+                textMesh.alignment = TextAlignment.Center;
+                textMesh.characterSize = 0.3f;
+                textMesh.fontSize = 24;
+                floater.SetActive(false);
+                return textMesh;
+            }
+            
+            return existing.GetComponent<TextMesh>();
         }
 
         private Vector3 GetUnitPosition(Tile tile)
@@ -361,13 +516,99 @@ namespace SLG.Units
             healthText.color = Color.white;
         }
 
+        private void StartHpBarAnimation(int fromHealth, int toHealth)
+        {
+            hpBarAnimFrom = fromHealth;
+            hpBarAnimTo = toHealth;
+            hpBarAnimProgress = 0f;
+            isHpBarAnimating = true;
+        }
+
         private void UpdateHealthDisplay()
         {
-            if (healthText != null)
+            if (healthText == null)
+                return;
+
+            int displayHp;
+            if (isHpBarAnimating)
             {
-                healthText.text = $"{currentHealth}/{MaxHealth}";
-                healthText.gameObject.SetActive(!isDead);
+                displayHp = Mathf.RoundToInt(Mathf.Lerp(hpBarAnimFrom, hpBarAnimTo, hpBarAnimProgress));
             }
+            else
+            {
+                displayHp = currentHealth;
+            }
+
+            healthText.text = $"{displayHp}/{MaxHealth}";
+            healthText.gameObject.SetActive(!isDead);
+        }
+
+        private void EnsureSelectionRing()
+        {
+            Transform existing = transform.Find("Selection Ring");
+            if (existing != null)
+            {
+                selectionRing = existing.gameObject;
+                selectionRingRenderer = selectionRing.GetComponent<Renderer>();
+                return;
+            }
+
+            if (!TryGetComponent(out MeshFilter sourceMeshFilter) || sourceMeshFilter.sharedMesh == null)
+            {
+                return;
+            }
+
+            selectionRing = new GameObject("Selection Ring");
+            selectionRing.transform.SetParent(transform, false);
+            selectionRing.transform.localPosition = new Vector3(0f, 0.02f, 0f);
+            selectionRing.transform.localRotation = Quaternion.identity;
+            selectionRing.transform.localScale = new Vector3(0.6f, 0.05f, 0.6f);
+
+            MeshFilter ringMesh = selectionRing.AddComponent<MeshFilter>();
+            ringMesh.sharedMesh = sourceMeshFilter.sharedMesh;
+
+            selectionRingRenderer = selectionRing.AddComponent<MeshRenderer>();
+            if (unitRenderer != null && unitRenderer.sharedMaterial != null)
+                selectionRingRenderer.sharedMaterial = unitRenderer.sharedMaterial;
+            
+            ringBlock ??= new MaterialPropertyBlock();
+            selectionRing.gameObject.SetActive(false);
+        }
+
+        private void UpdateSelectionRing()
+        {
+            if (selectionRing == null)
+                return;
+
+            bool shouldShow = isSelected && !isDead && !isMoving;
+            if (selectionRing.activeSelf == shouldShow)
+            {
+                if (shouldShow)
+                    ApplyRingColor();
+                return;
+            }
+
+            selectionRing.SetActive(shouldShow);
+            if (shouldShow)
+            {
+                selectionRingPulseTime = 0f;
+                ApplyRingColor();
+            }
+        }
+
+        private void ApplyRingColor()
+        {
+            if (selectionRingRenderer == null)
+                return;
+
+            Color ringColor = faction == UnitFaction.Player
+                ? new Color(0f, 1f, 0.95f, 0.9f) * selectionRingBrightness
+                : new Color(1f, 0.35f, 0.15f, 0.9f) * selectionRingBrightness;
+
+            selectionRingRenderer.GetPropertyBlock(ringBlock);
+            ringBlock.SetColor(BaseColorId, ringColor);
+            ringBlock.SetColor(ColorId, ringColor);
+            selectionRingRenderer.SetPropertyBlock(ringBlock);
         }
 
         private void ValidateDefinition()
@@ -409,7 +650,53 @@ namespace SLG.Units
             occupiedTile?.SetOccupyingUnit(null);
             occupiedTile = null;
             UpdateHealthDisplay();
+            
+            // Death fade animation
+            StartCoroutine(DeathFadeRoutine(deathFadeDuration));
+        }
+
+        private IEnumerator DeathFadeRoutine(float duration)
+        {
+            if (!CacheRenderer())
+                yield break;
+
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float alpha = 1f - (elapsed / duration);
+                Color currentColor = GetRendererColor();
+                currentColor.a = alpha;
+                ApplyColor(currentColor);
+                yield return null;
+            }
+
+            // Keep unit visible for a moment, then deactivate
+            yield return new WaitForSeconds(0.1f);
             gameObject.SetActive(false);
+        }
+
+        private Color GetRendererColor()
+        {
+            if (!CacheRenderer())
+                return Color.white;
+
+            // Try to get the color from the material
+            try
+            {
+                if (unitRenderer.sharedMaterial != null)
+                {
+                    if (unitRenderer.sharedMaterial.HasProperty("_BaseColor"))
+                        return unitRenderer.sharedMaterial.GetColor("_BaseColor");
+                    return unitRenderer.sharedMaterial.color;
+                }
+            }
+            catch (Exception)
+            {
+                // Fallback
+            }
+            
+            return Color.white;
         }
 
         private void ApplyColor(Color color)
@@ -472,6 +759,12 @@ namespace SLG.Units
             }
 
             ApplyColor(color);
+        }
+
+        private void OnDestroy()
+        {
+            if (floatingDamageCoroutine != null)
+                StopCoroutine(floatingDamageCoroutine);
         }
     }
 }

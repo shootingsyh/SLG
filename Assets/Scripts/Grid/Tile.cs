@@ -24,30 +24,34 @@ namespace SLG.Grid
         [Header("Runtime")]
         [SerializeField] private Unit occupyingUnit;
 
+        [Header("Visual Settings")]
+        [SerializeField] private TileVisualSettings visualSettings;
+
         private GridSystem gridSystem;
         private MeshRenderer meshRenderer;
-        private MeshRenderer movementOverlayRenderer;
-        private MeshRenderer attackRangeOverlayRenderer;
-        private MeshRenderer skillTargetOverlayRenderer;
-        private MeshRenderer skillAreaOverlayRenderer;
         private MaterialPropertyBlock propertyBlock;
-        private MaterialPropertyBlock overlayPropertyBlock;
-        private MaterialPropertyBlock attackOverlayPropertyBlock;
-        private MaterialPropertyBlock skillTargetPropertyBlock;
-        private MaterialPropertyBlock skillAreaPropertyBlock;
         private Color normalColor;
-        private Color hoverColor;
-        private Color selectedColor;
-        private Color movementRangeColor;
-        private Color attackRangeColor = new Color(0.95f, 0.2f, 0.12f, 1f);
-        private Color skillTargetColor = new Color(0.35f, 0.55f, 1f, 1f);
-        private Color skillAreaColor = new Color(0.8f, 0.25f, 1f, 1f);
+
+        private MeshRenderer movementOverlayRenderer;
+        private MaterialPropertyBlock movementOverlayBlock;
+        private MeshRenderer attackRangeOverlayRenderer;
+        private MaterialPropertyBlock attackOverlayBlock;
+        private MeshRenderer skillTargetOverlayRenderer;
+        private MaterialPropertyBlock skillTargetBlock;
+        private MeshRenderer skillAreaOverlayRenderer;
+        private MaterialPropertyBlock skillAreaBlock;
+        private MeshRenderer hoverOverlayRenderer;
+        private MaterialPropertyBlock hoverOverlayBlock;
+        private MeshRenderer selectedOverlayRenderer;
+        private MaterialPropertyBlock selectedOverlayBlock;
+
         private bool isHovered;
         private bool isSelected;
         private bool isInMovementRange;
         private bool isInAttackRange;
         private bool isSkillTarget;
         private bool isSkillArea;
+        private float selectedPulseTime;
 
         public int X => x;
         public int Y => y;
@@ -61,6 +65,8 @@ namespace SLG.Grid
         public bool IsGroundEnterable => terrainDefinition == null || terrainDefinition.GroundEnterable;
         public bool IsFlyingEnterable => terrainDefinition == null || terrainDefinition.FlyingEnterable;
 
+        private TileVisualSettings Settings => visualSettings ?? TileVisualSettings.Default;
+
         public void Initialize(GridSystem owner, GridCoordinate coordinate, TerrainDefinition terrain, Color baseColor, Color hover, Color selected, Color movementRange)
         {
             gridSystem = owner;
@@ -68,9 +74,6 @@ namespace SLG.Grid
             y = coordinate.Y;
             terrainDefinition = terrain;
             normalColor = baseColor;
-            hoverColor = hover;
-            selectedColor = selected;
-            movementRangeColor = movementRange;
 
             ApplyTerrainVisuals();
             RefreshVisualState();
@@ -86,6 +89,7 @@ namespace SLG.Grid
         public void SetSelected(bool selected)
         {
             isSelected = selected;
+            if (selected) selectedPulseTime = 0f;
             RefreshVisualState();
         }
 
@@ -169,6 +173,22 @@ namespace SLG.Grid
             CacheRenderer();
         }
 
+        private void Update()
+        {
+            if (isSelected && selectedOverlayRenderer != null)
+            {
+                selectedPulseTime += Time.deltaTime;
+                float settingsPulsePeriod = Settings.selectedPulsePeriod;
+                float period = settingsPulsePeriod > 0.01f ? settingsPulsePeriod : 0.8f;
+                float pulse = Mathf.PingPong(selectedPulseTime, period) / period;
+                float settingsAmplitude = Settings.selectedPulseAmplitude;
+                float amplitude = settingsAmplitude > 0f ? settingsAmplitude : 0.08f;
+                float scaleMultiplier = 1f + pulse * amplitude;
+                Vector3 baseScale = Settings.selectedBorderScale * 0.8f * Vector3.one;
+                selectedOverlayRenderer.transform.localScale = baseScale * scaleMultiplier;
+            }
+        }
+
         private void OnMouseEnter()
         {
             isHovered = true;
@@ -208,88 +228,141 @@ namespace SLG.Grid
             return true;
         }
 
-        private void ApplyColor(Color color)
+        private void ApplyTerrainVisuals()
         {
             if (!CacheRenderer())
             {
                 return;
             }
 
-            meshRenderer.GetPropertyBlock(propertyBlock);
-            propertyBlock.SetColor(BaseColorId, color);
-            propertyBlock.SetColor(ColorId, color);
-            meshRenderer.SetPropertyBlock(propertyBlock);
+            normalColor = terrainDefinition != null ? terrainDefinition.DisplayColor : normalColor;
+
+            if (terrainDefinition != null && terrainDefinition.Material != null)
+            {
+                meshRenderer.sharedMaterial = terrainDefinition.Material;
+            }
+
+            Vector3 localScale = transform.localScale;
+            float heightOffset = terrainDefinition != null ? terrainDefinition.VisualHeightOffset : 0f;
+            transform.localPosition = new Vector3(transform.localPosition.x, heightOffset, transform.localPosition.z);
+            transform.localScale = localScale;
         }
 
-        private void SetMovementOverlayVisible(bool visible)
+        private void RefreshVisualState()
+        {
+            TileVisualSettings s = Settings;
+
+            SetMovementOverlayVisible(isInMovementRange, s);
+            SetAttackRangeOverlayVisible(isInAttackRange, s);
+            SetSkillTargetOverlayVisible(isSkillTarget, s);
+            SetSkillAreaOverlayVisible(isSkillArea, s);
+            SetHoverOverlayVisible(isHovered, s);
+            SetSelectedOverlayVisible(isSelected, s);
+        }
+
+        private void SetMovementOverlayVisible(bool visible, TileVisualSettings s)
         {
             if (visible && movementOverlayRenderer == null)
             {
-                movementOverlayRenderer = EnsureOverlay("Movement Range Overlay", new Vector3(0f, 0.62f, 0f), new Vector3(0.72f, 0.08f, 0.72f));
+                movementOverlayRenderer = EnsureOverlay("Movement Range Overlay",
+                    new Vector3(0f, s.movementRangeHeight, 0f),
+                    s.movementRangeScale, false);
             }
 
             if (movementOverlayRenderer != null)
             {
                 movementOverlayRenderer.gameObject.SetActive(visible);
                 if (visible)
-                {
-                    ApplyMovementOverlayColor(movementRangeColor);
-                }
+                    ApplyOverlayColor(movementOverlayRenderer, ref movementOverlayBlock, s.movementRangeColor);
             }
         }
 
-        private void SetAttackRangeOverlayVisible(bool visible)
+        private void SetAttackRangeOverlayVisible(bool visible, TileVisualSettings s)
         {
             if (visible && attackRangeOverlayRenderer == null)
             {
-                attackRangeOverlayRenderer = EnsureOverlay("Attack Range Overlay", new Vector3(0f, 0.68f, 0f), new Vector3(0.44f, 0.1f, 0.44f));
+                attackRangeOverlayRenderer = EnsureOverlay("Attack Range Overlay",
+                    new Vector3(0f, s.attackRangeHeight, 0f),
+                    s.attackRangeScale, false);
             }
 
             if (attackRangeOverlayRenderer != null)
             {
                 attackRangeOverlayRenderer.gameObject.SetActive(visible);
                 if (visible)
-                {
-                    ApplyOverlayColor(attackRangeOverlayRenderer, ref attackOverlayPropertyBlock, attackRangeColor);
-                }
+                    ApplyOverlayColor(attackRangeOverlayRenderer, ref attackOverlayBlock, s.attackRangeColor);
             }
         }
 
-        private void SetSkillTargetOverlayVisible(bool visible)
+        private void SetSkillTargetOverlayVisible(bool visible, TileVisualSettings s)
         {
             if (visible && skillTargetOverlayRenderer == null)
             {
-                skillTargetOverlayRenderer = EnsureOverlay("Skill Target Overlay", new Vector3(0f, 0.72f, 0f), new Vector3(0.56f, 0.1f, 0.56f));
+                skillTargetOverlayRenderer = EnsureOverlay("Skill Target Overlay",
+                    new Vector3(0f, s.skillTargetHeight, 0f),
+                    s.skillTargetScale, false);
             }
 
             if (skillTargetOverlayRenderer != null)
             {
                 skillTargetOverlayRenderer.gameObject.SetActive(visible);
                 if (visible)
-                {
-                    ApplyOverlayColor(skillTargetOverlayRenderer, ref skillTargetPropertyBlock, skillTargetColor);
-                }
+                    ApplyOverlayColor(skillTargetOverlayRenderer, ref skillTargetBlock, s.skillTargetColor);
             }
         }
 
-        private void SetSkillAreaOverlayVisible(bool visible)
+        private void SetSkillAreaOverlayVisible(bool visible, TileVisualSettings s)
         {
             if (visible && skillAreaOverlayRenderer == null)
             {
-                skillAreaOverlayRenderer = EnsureOverlay("Skill Area Overlay", new Vector3(0f, 0.76f, 0f), new Vector3(0.34f, 0.1f, 0.34f));
+                skillAreaOverlayRenderer = EnsureOverlay("Skill Area Overlay",
+                    new Vector3(0f, s.skillAreaHeight, 0f),
+                    s.skillAreaScale, false);
             }
 
             if (skillAreaOverlayRenderer != null)
             {
                 skillAreaOverlayRenderer.gameObject.SetActive(visible);
                 if (visible)
-                {
-                    ApplyOverlayColor(skillAreaOverlayRenderer, ref skillAreaPropertyBlock, skillAreaColor);
-                }
+                    ApplyOverlayColor(skillAreaOverlayRenderer, ref skillAreaBlock, s.skillAreaColor);
             }
         }
 
-        private MeshRenderer EnsureOverlay(string overlayName, Vector3 localPosition, Vector3 localScale)
+        private void SetHoverOverlayVisible(bool visible, TileVisualSettings s)
+        {
+            if (visible && hoverOverlayRenderer == null)
+            {
+                hoverOverlayRenderer = EnsureOverlay("Hover Overlay",
+                    new Vector3(0f, s.hoverHeight, 0f),
+                    s.hoverBorderScale, false);
+            }
+
+            if (hoverOverlayRenderer != null)
+            {
+                hoverOverlayRenderer.gameObject.SetActive(visible);
+                if (visible)
+                    ApplyOverlayColor(hoverOverlayRenderer, ref hoverOverlayBlock, s.hoverBorderColor);
+            }
+        }
+
+        private void SetSelectedOverlayVisible(bool visible, TileVisualSettings s)
+        {
+            if (visible && selectedOverlayRenderer == null)
+            {
+                selectedOverlayRenderer = EnsureOverlay("Selected Overlay",
+                    new Vector3(0f, s.selectedHeight, 0f),
+                    s.selectedBorderScale, false);
+            }
+
+            if (selectedOverlayRenderer != null)
+            {
+                selectedOverlayRenderer.gameObject.SetActive(visible);
+                if (visible)
+                    ApplyOverlayColor(selectedOverlayRenderer, ref selectedOverlayBlock, s.selectedBorderColor);
+            }
+        }
+
+        private MeshRenderer EnsureOverlay(string overlayName, Vector3 localPosition, float scale, bool hideInEditMode)
         {
             if (!CacheRenderer())
             {
@@ -311,7 +384,7 @@ namespace SLG.Grid
             overlay.transform.SetParent(transform, false);
             overlay.transform.localPosition = localPosition;
             overlay.transform.localRotation = Quaternion.identity;
-            overlay.transform.localScale = localScale;
+            overlay.transform.localScale = Vector3.one * scale;
 
             MeshFilter overlayMeshFilter = overlay.AddComponent<MeshFilter>();
             overlayMeshFilter.sharedMesh = sourceMeshFilter.sharedMesh;
@@ -321,11 +394,6 @@ namespace SLG.Grid
             overlayRenderer.shadowCastingMode = ShadowCastingMode.Off;
             overlayRenderer.receiveShadows = false;
             return overlayRenderer;
-        }
-
-        private void ApplyMovementOverlayColor(Color color)
-        {
-            ApplyOverlayColor(movementOverlayRenderer, ref overlayPropertyBlock, color);
         }
 
         private void ApplyOverlayColor(MeshRenderer targetRenderer, ref MaterialPropertyBlock targetBlock, Color color)
@@ -340,66 +408,6 @@ namespace SLG.Grid
             targetBlock.SetColor(BaseColorId, color);
             targetBlock.SetColor(ColorId, color);
             targetRenderer.SetPropertyBlock(targetBlock);
-        }
-
-        private void ApplyTerrainVisuals()
-        {
-            normalColor = terrainDefinition != null ? terrainDefinition.DisplayColor : normalColor;
-            if (!CacheRenderer())
-            {
-                return;
-            }
-
-            if (terrainDefinition != null && terrainDefinition.Material != null)
-            {
-                meshRenderer.sharedMaterial = terrainDefinition.Material;
-                if (movementOverlayRenderer != null)
-                {
-                    movementOverlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
-                }
-
-                if (attackRangeOverlayRenderer != null)
-                {
-                    attackRangeOverlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
-                }
-
-                if (skillTargetOverlayRenderer != null)
-                {
-                    skillTargetOverlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
-                }
-
-                if (skillAreaOverlayRenderer != null)
-                {
-                    skillAreaOverlayRenderer.sharedMaterial = meshRenderer.sharedMaterial;
-                }
-            }
-
-            Vector3 localScale = transform.localScale;
-            float heightOffset = terrainDefinition != null ? terrainDefinition.VisualHeightOffset : 0f;
-            transform.localPosition = new Vector3(transform.localPosition.x, heightOffset, transform.localPosition.z);
-            transform.localScale = localScale;
-        }
-
-        private void RefreshVisualState()
-        {
-            SetMovementOverlayVisible(isInMovementRange);
-            SetAttackRangeOverlayVisible(isInAttackRange);
-            SetSkillTargetOverlayVisible(isSkillTarget);
-            SetSkillAreaOverlayVisible(isSkillArea);
-
-            if (isSelected)
-            {
-                ApplyColor(selectedColor);
-                return;
-            }
-
-            if (isHovered)
-            {
-                ApplyColor(hoverColor);
-                return;
-            }
-
-            ApplyColor(normalColor);
         }
     }
 }

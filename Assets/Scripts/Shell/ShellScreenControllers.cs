@@ -306,12 +306,22 @@ namespace SLG.Shell
     public sealed class InterGameController : MonoBehaviour
     {
         private string gameId = string.Empty;
-        private string completedBattleCount = "0";
+        // private string completedBattleCount = "0"; // Unused - use completedCount instead
         private string nextBattleId = string.Empty;
         private string message = string.Empty;
         private readonly GameFlowService flow = new GameFlowService();
         private bool saved;
         private int completedCount;
+
+        // Double-click prevention
+        private float lastNextBattleClickTime;
+        private float lastSaveClickTime;
+        private readonly float cooldownDelay = 0.5f;
+
+        // Save status display
+        private int savedSlotIndex = 0;
+        private float saveStatusTimer;
+        private const float saveStatusDuration = 3f;
 
         private void Awake()
         {
@@ -372,10 +382,15 @@ namespace SLG.Shell
             GameDefinition gameDef = GameDefinitions.Get(gameId);
             string gameName = gameDef != null ? gameDef.DisplayName : "Unknown Game";
 
-            GUILayout.BeginArea(new Rect(Screen.width * 0.2f, Screen.height * 0.2f, Screen.width * 0.6f, 300f), GUI.skin.box);
+            // Save status timer
+            if (saveStatusTimer > 0f)
+                saveStatusTimer -= Time.deltaTime;
+
+            GUILayout.BeginArea(new Rect(Screen.width * 0.25f, Screen.height * 0.15f, Screen.width * 0.5f, 380f), GUI.skin.box);
 
             GUILayout.Label("Inter-Game");
-            GUILayout.Label($"Game: {gameName}");
+            if (!string.IsNullOrEmpty(gameName))
+                GUILayout.Label($"Game: {gameName}");
             GUILayout.Label($"Completed Battles: {completedCount}");
 
             GameBattleDefinition nextBattle = null;
@@ -384,44 +399,79 @@ namespace SLG.Shell
                 nextBattle = gameDef.GetNextBattle(completedCount);
                 if (nextBattle != null)
                 {
+                    GUILayout.Space(8f);
                     GUILayout.Label($"Next Battle: {nextBattle.BattleName}");
                     GUILayout.Label($"Battle ID: {nextBattle.BattleId}");
                 }
             }
 
-            GUILayout.Space(16f);
+            GUILayout.Space(12f);
             GUILayout.Label("Save Campaign Progress:");
             GUILayout.BeginHorizontal();
             for (int i = 1; i <= SaveConstants.ManualCampaignSlotCount; i++)
             {
-                if (GUILayout.Button($"Slot {i}")) SaveCampaignToSlot(i);
+                // Secondary button styling (smaller, gray borders)
+                GUI.enabled = Time.time - lastSaveClickTime >= cooldownDelay;
+                GUILayout.BeginVertical(GUILayout.Width(80f));
+                if (GUILayout.Button($"Slot {i}", GUILayout.Height(32f)))
+                    SaveCampaignToSlot(i);
+                GUILayout.EndVertical();
             }
+            GUI.enabled = true;
             GUILayout.EndHorizontal();
 
             GUILayout.Space(8f);
-            if (saved) GUILayout.Label("Campaign Saved!");
-            if (!string.IsNullOrEmpty(message)) GUILayout.Label(message);
+
+            // Save status with visual feedback
+            if (saveStatusTimer > 0f && saved)
+            {
+                GUILayout.Label($"✓ Saved to Slot {savedSlotIndex}");
+            }
+            else if (!string.IsNullOrEmpty(message))
+            {
+                GUILayout.Label(message);
+            }
 
             GUILayout.FlexibleSpace();
+
+            // Primary action buttons (Next Battle or Complete, with cooldown)
             GUILayout.BeginHorizontal();
+            GUI.enabled = Time.time - lastNextBattleClickTime >= cooldownDelay;
+
             if (nextBattle != null)
             {
-                if (GUILayout.Button("Next Battle ▶"))
+                // Primary button - wider, larger
+                Rect buttonRect = GUILayoutUtility.GetRect(120, 40);
+                GUI.skin.button.fontSize = 16;
+                if (GUI.Button(buttonRect, "Next Battle ▶"))
                 {
+                    lastNextBattleClickTime = Time.time;
                     flow.TryStartGame(gameId);
                 }
+                GUI.skin.button.fontSize = 13;
             }
 
             if (completedCount >= 0)
             {
                 if (nextBattle == null && gameDef != null && completedCount >= gameDef.BattleCount)
                 {
-                    if (GUILayout.Button("Game Complete - Return to Title"))
+                    Rect buttonRect = GUILayoutUtility.GetRect(200, 40);
+                    GUI.skin.button.fontSize = 14;
+                    if (GUI.Button(buttonRect, "Game Complete"))
+                    {
+                        lastNextBattleClickTime = Time.time;
                         flow.TryCompleteTestGame();
+                    }
+                    GUI.skin.button.fontSize = 13;
                 }
             }
+            GUI.enabled = true;
 
-            if (GUILayout.Button("Return to Title")) flow.TryLoadTitleScene();
+            // Return to Title as tertiary (smaller, right-aligned)
+            if (GUILayout.Button("Return", GUILayout.Height(32f)))
+            {
+                flow.TryLoadTitleScene();
+            }
             GUILayout.EndHorizontal();
 
             GUILayout.EndArea();
@@ -429,13 +479,24 @@ namespace SLG.Shell
 
         private void SaveCampaignToSlot(int slot)
         {
+            if (Time.time - lastSaveClickTime < cooldownDelay)
+                return;
+
             CampaignSaveData data = BuildCampaignSave();
             SaveOperationResult result = GameShellServices.Repository.SaveCampaign(data, slot);
             message = result.Message;
             if (result.Success)
             {
                 saved = true;
+                savedSlotIndex = slot;
+                saveStatusTimer = saveStatusDuration;
+                lastSaveClickTime = Time.time;
+                message = string.Empty;
                 GameShellServices.Repository.DeleteBattleSave();
+            }
+            else
+            {
+                lastSaveClickTime = Time.time;
             }
         }
 

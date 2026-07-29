@@ -1,31 +1,44 @@
-using System.Text;
-using SLG.Saves;
-using SLG.Scenarios;
-using SLG.Shell;
-using SLG.Units;
-using UnityEngine;
-using UnityEngine.SceneManagement;
-using UnityEngine.UI;
+    using System;
+    using System.Collections;
+    using System.Collections.Generic;
+    using System.Text;
+    using SLG.Saves;
+    using SLG.Scenarios;
+    using SLG.Shell;
+    using SLG.Units;
+    using UnityEngine;
+    using UnityEngine.SceneManagement;
+    using UnityEngine.UI;
 
-namespace SLG.Core
-{
-    public sealed class BattleEndScreenController : MonoBehaviour
+    namespace SLG.Core
     {
-        private Canvas canvas;
-        private GameObject overlayPanel;
-        private GameObject overlayBackground;
-        private Text titleText;
-        private Text subtitleText;
-        private Text objectivesText;
-        private GameObject continueButtonObject;
-        private GameObject exitToTitleButtonObject;
-        private Button continueButton;
-        private Button exitToTitleButton;
+        public sealed class BattleEndScreenController : MonoBehaviour
+        {
+            private Canvas canvas;
+            private GameObject overlayPanel;
+            private GameObject overlayBackground;
+            private Text titleText;
+            private Text subtitleText;
+            private Text objectivesText;
+            private GameObject continueButtonObject;
+            private GameObject exitToTitleButtonObject;
+            private Button continueButton;
+            private Button exitToTitleButton;
 
-        private BattleTurnController turns;
-        private BattleScenarioController scenario;
+            private BattleTurnController turns;
+            private BattleScenarioController scenario;
 
-        public bool IsVisible => overlayPanel != null && overlayPanel.activeSelf;
+            public bool IsVisible => overlayPanel != null && overlayPanel.activeSelf;
+
+            private const float ResultDisplayDelay = 0.8f;
+            private bool isFadingIn;
+            private bool isFadingOut;
+            private float fadeAlpha = 0f;
+            private float resultDisplayTime;
+            private readonly float fadeDuration = 0.2f;
+
+            /// <summary>Bypass fade transitions and delays for PlayMode tests</summary>
+            internal static bool SkipAnimations { get; set; }
 
         private void Awake()
         {
@@ -60,19 +73,101 @@ namespace SLG.Core
                 exitToTitleButtonObject.GetComponentInChildren<Text>().text = "Return to Title";
 
             overlayPanel.SetActive(true);
+
+            // Setup fade animation
+            fadeAlpha = 0f;
+            isFadingIn = true;
+            isFadingOut = false;
+
+            if (SkipAnimations)
+            {
+                // Immediate show for tests
+                fadeAlpha = 1f;
+                isFadingIn = false;
+                ApplyAlpha();
+            }
         }
 
         public void Hide()
         {
             if (overlayPanel != null)
-                overlayPanel.SetActive(false);
+            {
+                if (SkipAnimations)
+                {
+                    overlayPanel.SetActive(false);
+                }
+                else
+                {
+                    isFadingOut = true;
+                    isFadingIn = false;
+                }
+            }
+        }
+
+        private void Update()
+        {
+            if (SkipAnimations)
+                return;
+
+            UpdateFadeAnimation();
+        }
+
+        private void UpdateFadeAnimation()
+        {
+            if (isFadingIn)
+            {
+                fadeAlpha += Time.deltaTime / fadeDuration;
+                if (fadeAlpha >= 1f)
+                {
+                    fadeAlpha = 1f;
+                    isFadingIn = false;
+                }
+                ApplyAlpha();
+            }
+            else if (isFadingOut)
+            {
+                fadeAlpha -= Time.deltaTime / fadeDuration;
+                if (fadeAlpha <= 0f)
+                {
+                    fadeAlpha = 0f;
+                    isFadingOut = false;
+                    if (overlayPanel != null)
+                        overlayPanel.SetActive(false);
+                }
+                ApplyAlpha();
+            }
+            else
+            {
+                ApplyAlpha();
+            }
+        }
+
+        private void ApplyAlpha()
+        {
+            if (overlayBackground != null)
+            {
+                Image bg = overlayBackground.GetComponent<Image>();
+                if (bg != null)
+                {
+                    Color c = bg.color;
+                    c.a = fadeAlpha;
+                    bg.color = c;
+                }
+            }
         }
 
         public void OnContinueClicked()
         {
             if (turns._campaignFlowProcessor != null)
             {
-                turns._campaignFlowProcessor.TryProcessVictory();
+                if (SkipAnimations)
+                {
+                    turns._campaignFlowProcessor.TryProcessVictory();
+                }
+                else
+                {
+                    StartCoroutine(FadeOutThenAction(() => turns._campaignFlowProcessor.TryProcessVictory()));
+                }
             }
         }
 
@@ -80,12 +175,49 @@ namespace SLG.Core
         {
             if (turns._campaignFlowProcessor != null)
             {
-                turns._campaignFlowProcessor.TryTransitionToTitle();
+                if (SkipAnimations)
+                {
+                    turns._campaignFlowProcessor.TryTransitionToTitle();
+                }
+                else
+                {
+                    StartCoroutine(FadeOutThenAction(() => turns._campaignFlowProcessor.TryTransitionToTitle()));
+                }
             }
             else
             {
-                SceneManager.LoadScene("Title");
+                if (SkipAnimations)
+                {
+                    SceneManager.LoadScene("Title");
+                }
+                else
+                {
+                    StartCoroutine(FadeOutThenAction(() => SceneManager.LoadScene("Title")));
+                }
             }
+        }
+
+        private System.Collections.IEnumerator FadeOutThenAction(System.Action action)
+        {
+            isFadingOut = true;
+            isFadingIn = false;
+
+            while (fadeAlpha > 0f)
+            {
+                fadeAlpha -= Time.deltaTime / fadeDuration;
+                if (fadeAlpha <= 0f)
+                {
+                    fadeAlpha = 0f;
+                    isFadingOut = false;
+                    if (overlayPanel != null)
+                        overlayPanel.SetActive(false);
+                    break;
+                }
+                ApplyAlpha();
+                yield return null;
+            }
+
+            action?.Invoke();
         }
 
         private void CreateOverlay()

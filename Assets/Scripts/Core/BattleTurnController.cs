@@ -69,6 +69,14 @@ namespace SLG.Core
         [SerializeField] private BattleScenarioController scenarioController;
         [SerializeField] private BattleSystemMenuController systemMenuController;
 
+        [Header("Battle HUD")]
+        [Tooltip("Top-center turn/round display panel")]
+        [SerializeField] private GameObject hudTurnPanel;
+        [SerializeField] private Text hudTurnText;
+        [SerializeField] private Text hudRoundText;
+        [SerializeField] private GameObject hudObjectivePanel;
+        [SerializeField] private Text hudObjectiveText;
+
         private readonly List<Unit> units = new List<Unit>();
         internal CampaignFlowService _campaignFlowProcessor;
         private SceneLoadedReason _sceneLoadedReason;
@@ -81,6 +89,12 @@ namespace SLG.Core
         private bool combatPreviewFollowsMouse;
         private string battleResult = string.Empty;
         private int currentRound = 1;
+
+        // Turn fade animation
+        private float turnFadeAlpha = 1f;
+        private bool turnFadingOut;
+        private bool turnFadingIn;
+        private readonly float turnFadeDuration = 0.25f;
 
         public BattlePhase CurrentPhase => currentPhase;
         public bool IsBattleEnded => battleEnded;
@@ -902,6 +916,188 @@ namespace SLG.Core
             {
                 waitButton.gameObject.SetActive(false);
                 waitButton.interactable = false;
+            }
+
+            // Update HUD elements with fade animation
+            string turnLabel2 = currentPhase == BattlePhase.PlayerTurn ? "Player Turn" : "Enemy Turn";
+            EnsureHUDElements();
+            if (hudTurnText != null)
+                hudTurnText.text = turnLabel2;
+            if (hudRoundText != null)
+                hudRoundText.text = $"Round {CurrentRound}";
+            if (hudObjectiveText != null)
+                UpdateObjectiveText();
+        }
+
+        private void UpdateObjectiveText()
+        {
+            if (hudObjectiveText == null)
+                return;
+
+            if (scenarioController != null && scenarioController.HasConfiguration && scenarioController.Configuration != null)
+            {
+                BattleSetupConfiguration config = scenarioController.Configuration;
+                if (config.RequireEliminateAllEnemies)
+                {
+                    hudObjectiveText.text = "Objective: Defeat all enemies";
+                    return;
+                }
+
+                if (config.Objectives.Count > 0)
+                {
+                    BattleObjectiveSetup obj = config.Objectives[0];
+                    if (obj != null)
+                    {
+                        switch (obj.Type)
+                        {
+                            case BattleObjectiveType.ReachArea:
+                                hudObjectiveText.text = $"Objective: {obj.UnitRole} must reach destination";
+                                break;
+                            case BattleObjectiveType.SurviveRounds:
+                                hudObjectiveText.text = $"Objective: Survive {obj.RequiredRounds} rounds";
+                                break;
+                            case BattleObjectiveType.ProtectUnit:
+                                hudObjectiveText.text = $"Objective: Protect {obj.UnitRole}";
+                                break;
+                        }
+                        return;
+                    }
+                }
+            }
+
+            hudObjectiveText.text = "Objective: Defeat all enemies";
+        }
+
+        private void EnsureHUDElements()
+        {
+            if (hudTurnPanel != null && hudTurnText != null && hudRoundText != null && hudObjectivePanel != null && hudObjectiveText != null)
+                return;
+
+            Canvas canvas = FindAnyObjectByType<Canvas>();
+            if (canvas == null)
+            {
+                GameObject canvasObj = new GameObject("Battle UI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+                canvas = canvasObj.GetComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            }
+
+            // Turn/round panel - top center
+            if (hudTurnPanel == null)
+            {
+                hudTurnPanel = new GameObject("HUD Turn Panel", typeof(RectTransform), typeof(Image));
+                hudTurnPanel.transform.SetParent(canvas.transform, false);
+                hudTurnPanel.GetComponent<Image>().color = new Color(0.05f, 0.05f, 0.08f, 0.8f);
+
+                RectTransform panelRect = hudTurnPanel.GetComponent<RectTransform>();
+                panelRect.anchorMin = new Vector2(0.5f, 1f);
+                panelRect.anchorMax = new Vector2(0.5f, 1f);
+                panelRect.pivot = new Vector2(0.5f, 1f);
+                panelRect.anchoredPosition = new Vector2(0f, -16f);
+                panelRect.sizeDelta = new Vector2(220f, 44f);
+
+                // Turn text
+                GameObject turnObj = new GameObject("Turn Text", typeof(RectTransform), typeof(Text));
+                turnObj.transform.SetParent(panelRect, false);
+                RectTransform turnRect = turnObj.GetComponent<RectTransform>();
+                turnRect.anchorMin = new Vector2(0f, 0f);
+                turnRect.anchorMax = new Vector2(1f, 0f);
+                turnRect.pivot = new Vector2(0.5f, 0.5f);
+                turnRect.anchoredPosition = new Vector2(0f, 6f);
+                turnRect.sizeDelta = new Vector2(-8f, 20f);
+                hudTurnText = turnObj.GetComponent<Text>();
+                hudTurnText.font = GetDefaultFont();
+                hudTurnText.fontSize = 18;
+                hudTurnText.color = Color.white;
+                hudTurnText.alignment = TextAnchor.MiddleCenter;
+
+                // Round text
+                GameObject roundObj = new GameObject("Round Text", typeof(RectTransform), typeof(Text));
+                roundObj.transform.SetParent(panelRect, false);
+                RectTransform roundRect = roundObj.GetComponent<RectTransform>();
+                roundRect.anchorMin = new Vector2(0f, 0f);
+                roundRect.anchorMax = new Vector2(1f, 0f);
+                roundRect.pivot = new Vector2(0.5f, 0.5f);
+                roundRect.anchoredPosition = new Vector2(0f, -8f);
+                roundRect.sizeDelta = new Vector2(-8f, 16f);
+                hudRoundText = roundObj.GetComponent<Text>();
+                hudRoundText.font = GetDefaultFont();
+                hudRoundText.fontSize = 13;
+                hudRoundText.color = new Color(0.7f, 0.7f, 0.8f);
+                hudRoundText.alignment = TextAnchor.MiddleCenter;
+            }
+
+            // Objective panel - top right
+            if (hudObjectivePanel == null)
+            {
+                hudObjectivePanel = new GameObject("HUD Objective Panel", typeof(RectTransform), typeof(Image));
+                hudObjectivePanel.transform.SetParent(canvas.transform, false);
+                hudObjectivePanel.GetComponent<Image>().color = new Color(0.05f, 0.05f, 0.08f, 0.7f);
+
+                RectTransform objRect = hudObjectivePanel.GetComponent<RectTransform>();
+                objRect.anchorMin = new Vector2(1f, 1f);
+                objRect.anchorMax = new Vector2(1f, 1f);
+                objRect.pivot = new Vector2(1f, 1f);
+                objRect.anchoredPosition = new Vector2(-18f, -18f);
+                objRect.sizeDelta = new Vector2(260f, 48f);
+
+                GameObject objTextObj = new GameObject("Objective Text", typeof(RectTransform), typeof(Text));
+                objTextObj.transform.SetParent(objRect, false);
+                RectTransform objTextRect = objTextObj.GetComponent<RectTransform>();
+                objTextRect.anchorMin = Vector2.zero;
+                objTextRect.anchorMax = Vector2.one;
+                objTextRect.offsetMin = new Vector2(10f, 6f);
+                objTextRect.offsetMax = new Vector2(-10f, -6f);
+                hudObjectiveText = objTextObj.GetComponent<Text>();
+                hudObjectiveText.font = GetDefaultFont();
+                hudObjectiveText.fontSize = 13;
+                hudObjectiveText.color = new Color(0.8f, 0.85f, 0.9f);
+                hudObjectiveText.alignment = TextAnchor.UpperLeft;
+                hudObjectiveText.supportRichText = false;
+            }
+        }
+
+        private void Update()
+        {
+            UpdateTurnFade();
+        }
+
+        private void UpdateTurnFade()
+        {
+            if (turnFadingOut)
+            {
+                turnFadeAlpha -= Time.deltaTime / turnFadeDuration;
+                if (turnFadeAlpha <= 0f)
+                {
+                    turnFadeAlpha = 0f;
+                    turnFadingOut = false;
+                    UpdateTurnUi();
+                    turnFadingIn = true;
+                }
+            }
+            else if (turnFadingIn)
+            {
+                turnFadeAlpha += Time.deltaTime / turnFadeDuration;
+                if (turnFadeAlpha >= 1f)
+                {
+                    turnFadeAlpha = 1f;
+                    turnFadingIn = false;
+                }
+            }
+
+            if (hudTurnPanel != null && (turnFadingOut || turnFadingIn))
+            {
+                ApplyPanelAlpha(hudTurnPanel, turnFadeAlpha);
+            }
+        }
+
+        private static void ApplyPanelAlpha(GameObject panel, float alpha)
+        {
+            Image image = panel.GetComponent<Image>();
+            if (image != null)
+            {
+                Color c = image.color;
+                c.a = Mathf.Clamp01(alpha) * 0.8f;
+                image.color = c;
             }
         }
     }
