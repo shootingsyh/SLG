@@ -60,6 +60,8 @@ namespace SLG.UI
             anchoredUnit = unit;
             showingAttackCancelOnly = false;
             SetActionButtonsVisible(true);
+            attackButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, buttonSpacing);
+            cancelButton.GetComponent<RectTransform>().anchoredPosition = Vector2.zero;
             SetButtonEnabled(skillsButton, skillsAvailable);
             SetButtonEnabled(itemsButton, false);
             cancelButton.gameObject.SetActive(true);
@@ -80,8 +82,12 @@ namespace SLG.UI
             anchoredUnit = unit;
             showingAttackCancelOnly = true;
             SetActionButtonsVisible(false);
+            attackButton.gameObject.SetActive(true);
+            attackButton.interactable = true;
+            attackButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, 20f);
             cancelButton.gameObject.SetActive(true);
             cancelButton.interactable = true;
+            cancelButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, -20f);
             menuRoot.gameObject.SetActive(true);
             UpdatePosition();
         }
@@ -130,13 +136,29 @@ namespace SLG.UI
                 clamped.y = Mathf.Max(clamped.y, unitScreenPos.y - size.y - 20f);
             }
             
-            menuRoot.position = clamped;
+            // Use anchoredPosition for ScreenSpaceOverlay canvas (screen-space coordinates)
+            // For ScreenSpaceCamera, we'd need to convert to local space
+            if (canvas.renderMode == UnityEngine.RenderMode.ScreenSpaceOverlay)
+            {
+                menuRoot.anchoredPosition = clamped;
+            }
+            else
+            {
+                // ScreenSpaceCamera: convert screen point to local space
+                Vector2 localPoint;
+                if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    menuRoot, new Vector3(clamped.x, clamped.y, 0f), 
+                    canvas.worldCamera ?? Camera.main, out localPoint))
+                {
+                    menuRoot.anchoredPosition = localPoint;
+                }
+            }
         }
 
         private Vector2 GetCurrentBoundsSize()
         {
             float width = showingAttackCancelOnly ? 88f : buttonSpacing * 2f + 88f;
-            float height = showingAttackCancelOnly ? 40f : buttonSpacing * 2f + 88f;
+            float height = showingAttackCancelOnly ? 80f : buttonSpacing * 2f + 88f;
             return new Vector2(width, height);
         }
 
@@ -151,8 +173,7 @@ namespace SLG.UI
             targetCamera = Camera.main;
             if (canvas == null)
             {
-                Debug.LogError("UnitActionMenuController requires an existing Canvas.", this);
-                return;
+                canvas = EnsureSharedCanvas();
             }
 
             if (menuRoot == null)
@@ -300,6 +321,14 @@ namespace SLG.UI
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             return font != null ? font : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        }
+
+        private Canvas EnsureSharedCanvas()
+        {
+            GameObject canvasObject = new GameObject("Battle UI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            Canvas canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            return canvas;
         }
     }
 }

@@ -121,7 +121,7 @@ namespace SLG.UI
             if (hpBarFill != null)
             {
                 float hpRatio = (float)unit.CurrentHealth / unit.MaxHealth;
-                hpBarFill.fillAmount = hpRatio;
+                hpBarFill.rectTransform.anchorMax = new Vector2(hpRatio, 0.5f);
                 hpBarFill.color = hpRatio > 0.5f ? new Color(0.2f, 0.9f, 0.4f, 1f)
                     : (hpRatio > 0.25f ? new Color(0.9f, 0.85f, 0.2f, 1f)
                     : new Color(0.9f, 0.2f, 0.15f, 1f));
@@ -170,8 +170,7 @@ namespace SLG.UI
             Canvas canvas = FindAnyObjectByType<Canvas>();
             if (canvas == null)
             {
-                Debug.LogError("UnitProfileController requires an existing Canvas.", this);
-                return;
+                canvas = EnsureSharedCanvas();
             }
 
             if (profilePanel == null)
@@ -189,6 +188,11 @@ namespace SLG.UI
                 rect.anchoredPosition = new Vector2(18f, -18f);
                 rect.sizeDelta = new Vector2(280f, 170f);
 
+                panelBackground = profilePanel;
+            }
+
+            if (panelBackground == null)
+            {
                 panelBackground = profilePanel;
             }
 
@@ -264,8 +268,10 @@ namespace SLG.UI
             hpText.color = Color.white;
             hpText.alignment = TextAnchor.MiddleCenter;
 
-            // HP bar
-            GameObject hpBarBg = new GameObject("HP Bar BG", typeof(RectTransform), typeof(Image));
+            Sprite hpSprite = CreateWhitePixelSprite();
+
+            // HP bar bg + mask
+            GameObject hpBarBg = new GameObject("HP Bar BG", typeof(RectTransform), typeof(Image), typeof(Mask));
             hpBarBg.transform.SetParent(profilePanel.transform, false);
             RectTransform hpBarBgRect = hpBarBg.GetComponent<RectTransform>();
             hpBarBgRect.anchorMin = new Vector2(0f, 1f);
@@ -273,20 +279,22 @@ namespace SLG.UI
             hpBarBgRect.pivot = new Vector2(0.5f, 1f);
             hpBarBgRect.anchoredPosition = new Vector2(0f, -58f);
             hpBarBgRect.sizeDelta = new Vector2(-32f, 8f);
-            hpBarBg.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.15f);
+            Image bgImage = hpBarBg.GetComponent<Image>();
+            bgImage.color = new Color(0.15f, 0.15f, 0.15f);
+            bgImage.sprite = hpSprite;
+            bgImage.type = Image.Type.Simple;
 
             GameObject hpBarFillObj = new GameObject("HP Bar Fill", typeof(RectTransform), typeof(Image));
             hpBarFillObj.transform.SetParent(hpBarBg.transform, false);
             RectTransform hpBarFillRect = hpBarFillObj.GetComponent<RectTransform>();
-            hpBarFillRect.anchorMin = new Vector2(0f, 1f);
-            hpBarFillRect.anchorMax = new Vector2(0f, 1f);
-            hpBarFillRect.pivot = new Vector2(0f, 1f);
+            hpBarFillRect.anchorMin = new Vector2(0f, 0.5f);
+            hpBarFillRect.anchorMax = new Vector2(0.5f, 0.5f);
+            hpBarFillRect.pivot = new Vector2(0.5f, 0.5f);
             hpBarFillRect.anchoredPosition = Vector2.zero;
-            hpBarFillRect.sizeDelta = new Vector2(500f, 8f);
+            hpBarFillRect.sizeDelta = new Vector2(-2f, 4f);
             hpBarFill = hpBarFillObj.GetComponent<Image>();
-            hpBarFill.fillMethod = Image.FillMethod.Horizontal;
-            hpBarFill.fillOrigin = (int)Image.OriginHorizontal.Left;
-            hpBarFill.fillAmount = 1f;
+            hpBarFill.sprite = hpSprite;
+            hpBarFill.type = Image.Type.Simple;
             hpBarFill.color = new Color(0.2f, 0.9f, 0.4f);
 
             // Stats block
@@ -329,6 +337,25 @@ namespace SLG.UI
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             return font != null ? font : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        }
+
+        private Canvas EnsureSharedCanvas()
+        {
+            GameObject canvasObject = new GameObject("Battle UI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            Canvas canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            return canvas;
+        }
+
+        private static Sprite CreateWhitePixelSprite()
+        {
+            Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            for (int x = 0; x < 2; x++)
+                for (int y = 0; y < 2; y++)
+                    tex.SetPixel(x, y, Color.white);
+            tex.filterMode = FilterMode.Point;
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f));
         }
     }
 }

@@ -563,7 +563,7 @@ namespace SLG.Units
                     break;
                 case PlayerInteractionState.ChoosingAttackTarget:
                     ValidateSelectedUnitForState(newState);
-                    actionMenuController?.ShowAttackCancel(selectedUnit);
+                    actionMenuController?.Hide();
                     skillSelectionPanelController?.Hide();
                     ClearMovementRangePreview();
                     ClearCombatPreview();

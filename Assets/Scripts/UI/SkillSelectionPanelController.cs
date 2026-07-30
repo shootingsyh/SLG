@@ -80,8 +80,7 @@ namespace SLG.UI
             Canvas canvas = FindAnyObjectByType<Canvas>();
             if (canvas == null)
             {
-                Debug.LogError("SkillSelectionPanelController requires an existing Canvas.", this);
-                return;
+                canvas = EnsureSharedCanvas();
             }
 
             if (panel == null)
@@ -194,6 +193,14 @@ namespace SLG.UI
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             return font != null ? font : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        }
+
+        private Canvas EnsureSharedCanvas()
+        {
+            GameObject canvasObject = new GameObject("Battle UI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            Canvas canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            return canvas;
         }
     }
 }
