@@ -588,7 +588,7 @@ namespace SLG.Tests.PlayMode
 
         private void KillAllEnemies(BattleRuntimeContext context)
         {
-            foreach (Unit unit in context.Turns.ActiveUnits)
+            foreach (Unit unit in Object.FindObjectsByType<Unit>(FindObjectsInactive.Exclude))
             {
                 if (unit != null && unit.IsAlive && unit.Faction == UnitFaction.Enemy)
                     unit.ReceiveDamage(999);

@@ -18,6 +18,9 @@ EditorBuildSettings:
     path: Assets/Scenes/ChapterResult.unity
     guid: 553fb701492d1b744ae2331a4f8ab23d
   - enabled: 1
+    path: Assets/Scenes/InterGame.unity
+    guid: 877685012f19b8d41b7b7a27dce293af
+  - enabled: 1
     path: Assets/Scenes/BattleTestTemplate.unity
     guid: 2f8827a3e3474df42b125d780073815d
   - enabled: 1

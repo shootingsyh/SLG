@@ -56,6 +56,16 @@ namespace SLG.Shell
 
         public bool TryProcessVictory()
         {
+            return TryProcessVictoryInternal(true);
+        }
+
+        public bool TryProcessVictoryStateOnly()
+        {
+            return TryProcessVictoryInternal(false);
+        }
+
+        private bool TryProcessVictoryInternal(bool loadScene)
+        {
             if (resultProcessing || resultProcessed)
             {
                 return false;
@@ -88,7 +98,14 @@ namespace SLG.Shell
 
                 flow.DemoState = IsFinalBattle(definition) ? DemoFlowState.Battle2Complete : DemoFlowState.Battle1Complete;
 
-                GameShellServices.SetPendingCampaignData(data, IsFinalBattle(definition));
+                GameShellServices.SetPendingCampaignData(data, IsFinalBattle(definition), data.GameId);
+
+                if (!loadScene)
+                {
+                    resultProcessed = true;
+                    resultProcessing = false;
+                    return true;
+                }
 
                 string destinationScene = CampaignSceneNames.ChapterResult.ToString();
                 bool transitionSucceeded = TryLoadScene(destinationScene, ShellScreen.ChapterResult);
@@ -123,6 +140,16 @@ namespace SLG.Shell
 
         public bool TryProcessDefeat()
         {
+            return TryProcessDefeatInternal(true);
+        }
+
+        public bool TryProcessDefeatStateOnly()
+        {
+            return TryProcessDefeatInternal(false);
+        }
+
+        private bool TryProcessDefeatInternal(bool loadScene)
+        {
             if (resultProcessing || resultProcessed)
             {
                 return false;
@@ -147,6 +174,9 @@ namespace SLG.Shell
 
                 resultProcessed = true;
                 resultProcessing = false;
+
+                if (!loadScene)
+                    return true;
 
                 return TryLoadScene(CampaignSceneNames.Title.ToString(), ShellScreen.MainMenu);
             }
@@ -221,6 +251,7 @@ namespace SLG.Shell
             }
 
             CampaignSaveData data = new CampaignSaveData();
+            data.GameId = string.IsNullOrEmpty(GameShellServices.ActiveGameId) ? "default" : GameShellServices.ActiveGameId;
             data.ChapterId = "chapter-1";
             data.ChapterName = "Demo Campaign";
             data.BattleId = definition.BattleId;

@@ -869,6 +869,14 @@ namespace SLG.Core
             scenarioController?.NotifyBattleEnded();
             unitSelectionController?.ClearBattleUiAndSelection();
 
+            if (_campaignFlowProcessor != null)
+            {
+                if (message == "Victory")
+                    _campaignFlowProcessor.TryProcessVictoryStateOnly();
+                else if (message == "Defeat")
+                    _campaignFlowProcessor.TryProcessDefeatStateOnly();
+            }
+
             if (resultLabel != null)
             {
                 resultLabel.text = message;

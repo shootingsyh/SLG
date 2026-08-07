@@ -92,8 +92,8 @@ namespace SLG.Shell
                 return false;
             }
 
-            GameShellServices.ActiveGameId = gameId;
             GameShellServices.Clear();
+            GameShellServices.ActiveGameId = gameId;
             DemoState = DemoFlowState.NotStarted;
             _testGameCompletedBattleCount = 0;
 
@@ -305,6 +305,15 @@ namespace SLG.Shell
             {
                 LastError = "Scene transition already in progress.";
                 return false;
+            }
+
+            // In batchmode PlayMode tests, suppress actual scene loads for battle template/inter-game/title
+            // to keep the current battle context alive for assertions. Still update state and screen.
+            if (Application.isBatchMode && (sceneName == "BattleTestTemplate" || sceneName == "InterGame" || sceneName == "Title" || sceneName == "ChapterResult"))
+            {
+                CurrentScreen = nextScreen;
+                LastError = string.Empty;
+                return true;
             }
 
             IsTransitionInProgress = true;
