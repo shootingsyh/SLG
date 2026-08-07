@@ -195,12 +195,25 @@ namespace SLG.UI
             return font != null ? font : Resources.GetBuiltinResource<Font>("Arial.ttf");
         }
 
+        private static Canvas sharedCanvas;
+
         private Canvas EnsureSharedCanvas()
         {
+            if (sharedCanvas != null)
+                return sharedCanvas;
+
+            Canvas existing = FindAnyObjectByType<Canvas>();
+            if (existing != null)
+            {
+                sharedCanvas = existing;
+                return sharedCanvas;
+            }
+
             GameObject canvasObject = new GameObject("Battle UI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             Canvas canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            return canvas;
+            sharedCanvas = canvas;
+            return sharedCanvas;
         }
     }
 }

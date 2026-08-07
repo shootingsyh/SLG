@@ -137,18 +137,23 @@ namespace SLG.UI
             }
             
             // Use anchoredPosition for ScreenSpaceOverlay canvas (screen-space coordinates)
-            // For ScreenSpaceCamera, we'd need to convert to local space
-            if (canvas.renderMode == UnityEngine.RenderMode.ScreenSpaceOverlay)
+            if (canvas == null || canvas.renderMode == RenderMode.ScreenSpaceOverlay)
             {
                 menuRoot.anchoredPosition = clamped;
             }
             else
             {
-                // ScreenSpaceCamera: convert screen point to local space
+                RectTransform parentRect = menuRoot.parent as RectTransform;
+                if (parentRect == null)
+                {
+                    menuRoot.anchoredPosition = clamped;
+                    return;
+                }
+
                 Vector2 localPoint;
                 if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                    menuRoot, new Vector3(clamped.x, clamped.y, 0f), 
-                    canvas.worldCamera ?? Camera.main, out localPoint))
+                    parentRect, new Vector3(clamped.x, clamped.y, 0f),
+                    canvas.worldCamera ?? camera, out localPoint))
                 {
                     menuRoot.anchoredPosition = localPoint;
                 }
@@ -323,12 +328,25 @@ namespace SLG.UI
             return font != null ? font : Resources.GetBuiltinResource<Font>("Arial.ttf");
         }
 
+        private static Canvas sharedCanvas;
+
         private Canvas EnsureSharedCanvas()
         {
+            if (sharedCanvas != null)
+                return sharedCanvas;
+
+            Canvas existing = FindAnyObjectByType<Canvas>();
+            if (existing != null)
+            {
+                sharedCanvas = existing;
+                return sharedCanvas;
+            }
+
             GameObject canvasObject = new GameObject("Battle UI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             Canvas canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            return canvas;
+            sharedCanvas = canvas;
+            return sharedCanvas;
         }
     }
 }

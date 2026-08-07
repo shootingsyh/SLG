@@ -555,7 +555,7 @@ namespace SLG.Units
                 case PlayerInteractionState.ChoosingSkillTarget:
                     ValidateSelectedUnitForState(newState);
                     skillSelectionPanelController?.Hide();
-                    actionMenuController?.ShowAttackCancel(selectedUnit);
+                    actionMenuController?.Hide();
                     ClearMovementRangePreview();
                     ClearAttackTargetingHighlights();
                     ClearCombatPreview();

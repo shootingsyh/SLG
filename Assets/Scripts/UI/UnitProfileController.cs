@@ -19,6 +19,8 @@ namespace SLG.UI
         [SerializeField] private Image hpBarFill;
         [SerializeField] private Text statsText;
 
+        private static Sprite cachedWhitePixelSprite;
+
         private readonly StringBuilder builder = new StringBuilder(256);
         private Unit displayedUnit;
         private float fadeAlpha;
@@ -270,8 +272,8 @@ namespace SLG.UI
 
             Sprite hpSprite = CreateWhitePixelSprite();
 
-            // HP bar bg + mask
-            GameObject hpBarBg = new GameObject("HP Bar BG", typeof(RectTransform), typeof(Image), typeof(Mask));
+            // HP bar bg + rect mask
+            GameObject hpBarBg = new GameObject("HP Bar BG", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
             hpBarBg.transform.SetParent(profilePanel.transform, false);
             RectTransform hpBarBgRect = hpBarBg.GetComponent<RectTransform>();
             hpBarBgRect.anchorMin = new Vector2(0f, 1f);
@@ -288,7 +290,7 @@ namespace SLG.UI
             hpBarFillObj.transform.SetParent(hpBarBg.transform, false);
             RectTransform hpBarFillRect = hpBarFillObj.GetComponent<RectTransform>();
             hpBarFillRect.anchorMin = new Vector2(0f, 0.5f);
-            hpBarFillRect.anchorMax = new Vector2(0.5f, 0.5f);
+            hpBarFillRect.anchorMax = new Vector2(1f, 0.5f);
             hpBarFillRect.pivot = new Vector2(0.5f, 0.5f);
             hpBarFillRect.anchoredPosition = Vector2.zero;
             hpBarFillRect.sizeDelta = new Vector2(-2f, 4f);
@@ -339,23 +341,42 @@ namespace SLG.UI
             return font != null ? font : Resources.GetBuiltinResource<Font>("Arial.ttf");
         }
 
+        private static Canvas sharedCanvas;
+
         private Canvas EnsureSharedCanvas()
         {
+            if (sharedCanvas != null)
+                return sharedCanvas;
+
+            Canvas existing = FindAnyObjectByType<Canvas>();
+            if (existing != null)
+            {
+                sharedCanvas = existing;
+                return sharedCanvas;
+            }
+
             GameObject canvasObject = new GameObject("Battle UI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             Canvas canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            return canvas;
+            sharedCanvas = canvas;
+            return sharedCanvas;
         }
 
         private static Sprite CreateWhitePixelSprite()
         {
+            if (cachedWhitePixelSprite != null)
+                return cachedWhitePixelSprite;
+
             Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            tex.hideFlags = HideFlags.HideAndDontSave;
             for (int x = 0; x < 2; x++)
                 for (int y = 0; y < 2; y++)
                     tex.SetPixel(x, y, Color.white);
             tex.filterMode = FilterMode.Point;
             tex.Apply();
-            return Sprite.Create(tex, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f));
+            cachedWhitePixelSprite = Sprite.Create(tex, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f));
+            cachedWhitePixelSprite.hideFlags = HideFlags.HideAndDontSave;
+            return cachedWhitePixelSprite;
         }
     }
 }
