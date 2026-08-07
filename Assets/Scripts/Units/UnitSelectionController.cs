@@ -139,7 +139,11 @@ namespace SLG.Units
                     SelectUnit(unit);
                     break;
                 case PlayerInteractionState.ChoosingMovement:
-                    if (unit == selectedUnit)
+                    if (highlightedAttackTargets.Contains(unit))
+                    {
+                        BeginPlayerAttack(unit);
+                    }
+                    else if (unit == selectedUnit)
                     {
                         ChooseStayInPlace();
                     }
@@ -206,7 +210,7 @@ namespace SLG.Units
         {
             hoveredUnit = unit != null && unit.IsAlive ? unit : null;
 
-            if (interactionState == PlayerInteractionState.ChoosingAttackTarget && unit != null && highlightedAttackTargets.Contains(unit))
+            if ((interactionState == PlayerInteractionState.ChoosingMovement || interactionState == PlayerInteractionState.ChoosingAttackTarget) && unit != null && highlightedAttackTargets.Contains(unit))
             {
                 ShowPlayerAttackPreview(unit);
             }
@@ -488,6 +492,13 @@ namespace SLG.Units
 
         private void ExitState(PlayerInteractionState oldState)
         {
+            if (oldState == PlayerInteractionState.ChoosingMovement)
+            {
+                ClearMovementRangePreview();
+                ClearAttackTargetingHighlights();
+                ClearCombatPreview();
+            }
+
             if (oldState == PlayerInteractionState.ChoosingAttackTarget)
             {
                 ClearAttackTargetingHighlights();
@@ -519,9 +530,10 @@ namespace SLG.Units
                 case PlayerInteractionState.ChoosingMovement:
                     ValidateSelectedUnitForState(newState);
                     actionMenuController?.Hide();
-                    ClearAttackTargetingHighlights();
                     ClearCombatPreview();
                     RefreshMovementRangePreview(selectedUnit);
+                    RefreshAttackRangePreview(selectedUnit);
+                    RefreshAttackTargets(selectedUnit);
                     break;
                 case PlayerInteractionState.Moving:
                 case PlayerInteractionState.ReturningToOriginalTile:
@@ -593,6 +605,13 @@ namespace SLG.Units
         {
             if (selectedUnit == null || tile == null)
             {
+                return;
+            }
+
+            // Prioritize attack if tile holds an attackable enemy (unified flow)
+            if (tile.OccupyingUnit != null && highlightedAttackTargets.Contains(tile.OccupyingUnit))
+            {
+                BeginPlayerAttack(tile.OccupyingUnit);
                 return;
             }
 
