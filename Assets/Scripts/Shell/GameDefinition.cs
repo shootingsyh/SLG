@@ -98,6 +98,7 @@ namespace SLG.Shell
             RegisterProductionGame();
 #if UNITY_EDITOR
             RegisterTestGame();
+            RegisterItemTestGame();
 #endif
         }
 
@@ -134,6 +135,22 @@ namespace SLG.Shell
 
             registry[game.GameId] = game;
         }
+
+        static void RegisterItemTestGame()
+        {
+            GameDefinition game = new GameDefinition
+            {
+                GameId = "item-test",
+                DisplayName = "Item Test Game (3 Battles)",
+                Battles = new[]
+                {
+                    new GameBattleDefinition { BattleId = "item-test-battle-1", BattleName = "Item Test 1 - Potion", Preset = BattleTestPresetId.ItemTestBattle1 },
+                    new GameBattleDefinition { BattleId = "item-test-battle-2", BattleName = "Item Test 2 - Sword", Preset = BattleTestPresetId.ItemTestBattle2 },
+                    new GameBattleDefinition { BattleId = "item-test-battle-3", BattleName = "Item Test 3 - Armor", Preset = BattleTestPresetId.ItemTestBattle3 }
+                }
+            };
+            registry[game.GameId] = game;
+        }
 #endif
 
         public static GameDefinition Get(string gameId)
@@ -151,6 +168,11 @@ namespace SLG.Shell
         public static GameDefinition GetTest()
         {
             return Get("test-1");
+        }
+
+        public static GameDefinition GetItemTest()
+        {
+            return Get("item-test");
         }
 #endif
 

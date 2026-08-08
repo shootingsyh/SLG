@@ -121,7 +121,14 @@ namespace SLG.Scenarios
         DemoBattle2Protect,
         TestSwiftVictory1,
         TestSwiftVictory2,
-        TestSwiftVictory3
+        TestSwiftVictory3,
+        ItemPotionHeal,
+        ItemBombDamage,
+        ItemEquipmentAttack,
+        ItemEquipmentDefense,
+        ItemTestBattle1,
+        ItemTestBattle2,
+        ItemTestBattle3
     }
 
     [Serializable]

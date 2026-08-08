@@ -63,7 +63,14 @@ namespace SLG.Scenarios
             Preset(BattleTestPresetId.DemoBattle2Protect, "Demo Battle 2 - Protect", 0, "Demo Battle 2: Protect the Healer."),
             Preset(BattleTestPresetId.TestSwiftVictory1, "Test Swift Victory 1", 0, "Test game: 1-hit victory."),
             Preset(BattleTestPresetId.TestSwiftVictory2, "Test Swift Victory 2", 0, "Test game: 1-hit victory."),
-            Preset(BattleTestPresetId.TestSwiftVictory3, "Test Swift Victory 3", 0, "Test game: 1-hit victory.")
+            Preset(BattleTestPresetId.TestSwiftVictory3, "Test Swift Victory 3", 0, "Test game: 1-hit victory."),
+            Preset(BattleTestPresetId.ItemPotionHeal, "Item Potion Heal", 0, "Verify Potion heals damaged ally."),
+            Preset(BattleTestPresetId.ItemBombDamage, "Item Bomb Damage", 0, "Verify Bomb damages enemy."),
+            Preset(BattleTestPresetId.ItemEquipmentAttack, "Item Equipment Attack", 0, "Verify Iron Sword attack bonus."),
+            Preset(BattleTestPresetId.ItemEquipmentDefense, "Item Equipment Defense", 0, "Verify Iron Armor defense bonus."),
+            Preset(BattleTestPresetId.ItemTestBattle1, "Item Test Battle 1", 0, "Item test 1: Potion + Victory."),
+            Preset(BattleTestPresetId.ItemTestBattle2, "Item Test Battle 2", 0, "Item test 2: Sword."),
+            Preset(BattleTestPresetId.ItemTestBattle3, "Item Test Battle 3", 0, "Item test 3: Armor.")
         };
 
         public static IReadOnlyList<BattleTestPresetMetadata> Presets => presets;
@@ -237,6 +244,61 @@ namespace SLG.Scenarios
                     AddUnit(config, "enemy", "Weak Enemy", BattleUnitRole.Enemy, defs.Enemy, UnitFaction.Enemy, 1, 0);
                     config.Units[config.Units.Count - 1].CurrentHealth = 1;
                     config.PlayerFormation = BattleFormationPreset.KnightOnly;
+                    config.EnemyFormation = BattleFormationPreset.SingleMelee;
+                    config.RequireEliminateAllEnemies = true;
+                    config.Objectives.Clear();
+                    config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.EliminateAllEnemies });
+                    break;
+                }
+                case BattleTestPresetId.ItemPotionHeal:
+                case BattleTestPresetId.ItemTestBattle1:
+                {
+                    config.Units.Clear();
+                    AddUnit(config, "knight", "Knight", BattleUnitRole.Knight, defs.Knight, UnitFaction.Player, 0, 0);
+                    AddUnit(config, "healer", "Healer", BattleUnitRole.Healer, defs.Healer, UnitFaction.Player, 0, 1);
+                    config.Units[config.Units.Count - 1].CurrentHealth = 5;
+                    AddUnit(config, "enemy", "Weak Enemy", BattleUnitRole.Enemy, defs.Enemy, UnitFaction.Enemy, 1, 0);
+                    config.Units[config.Units.Count - 1].CurrentHealth = 1;
+                    config.PlayerFormation = BattleFormationPreset.KnightHealer;
+                    config.EnemyFormation = BattleFormationPreset.SingleMelee;
+                    config.RequireEliminateAllEnemies = true;
+                    config.Objectives.Clear();
+                    config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.EliminateAllEnemies });
+                    break;
+                }
+                case BattleTestPresetId.ItemBombDamage:
+                {
+                    config.Units.Clear();
+                    AddUnit(config, "knight", "Knight", BattleUnitRole.Knight, defs.Knight, UnitFaction.Player, 0, 0);
+                    AddUnit(config, "enemy", "Enemy", BattleUnitRole.Enemy, defs.Enemy, UnitFaction.Enemy, 1, 0);
+                    config.PlayerFormation = BattleFormationPreset.KnightOnly;
+                    config.EnemyFormation = BattleFormationPreset.SingleMelee;
+                    config.RequireEliminateAllEnemies = true;
+                    config.Objectives.Clear();
+                    config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.EliminateAllEnemies });
+                    break;
+                }
+                case BattleTestPresetId.ItemEquipmentAttack:
+                case BattleTestPresetId.ItemTestBattle2:
+                {
+                    config.Units.Clear();
+                    AddUnit(config, "knight", "Knight", BattleUnitRole.Knight, defs.Knight, UnitFaction.Player, 0, 0);
+                    AddUnit(config, "enemy", "Enemy", BattleUnitRole.Enemy, defs.Enemy, UnitFaction.Enemy, 1, 0);
+                    config.PlayerFormation = BattleFormationPreset.KnightOnly;
+                    config.EnemyFormation = BattleFormationPreset.SingleMelee;
+                    config.RequireEliminateAllEnemies = true;
+                    config.Objectives.Clear();
+                    config.Objectives.Add(new BattleObjectiveSetup { Type = BattleObjectiveType.EliminateAllEnemies });
+                    break;
+                }
+                case BattleTestPresetId.ItemEquipmentDefense:
+                case BattleTestPresetId.ItemTestBattle3:
+                {
+                    config.Units.Clear();
+                    AddUnit(config, "knight", "Knight", BattleUnitRole.Knight, defs.Knight, UnitFaction.Player, 0, 0);
+                    AddUnit(config, "healer", "Healer", BattleUnitRole.Healer, defs.Healer, UnitFaction.Player, 0, 1);
+                    AddUnit(config, "enemy", "Enemy", BattleUnitRole.Enemy, defs.Enemy, UnitFaction.Enemy, 2, 0);
+                    config.PlayerFormation = BattleFormationPreset.KnightHealer;
                     config.EnemyFormation = BattleFormationPreset.SingleMelee;
                     config.RequireEliminateAllEnemies = true;
                     config.Objectives.Clear();

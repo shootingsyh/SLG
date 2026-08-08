@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using SLG.Core;
+using SLG.Items;
 using SLG.Scenarios;
 using SLG.Units;
 
@@ -101,6 +102,8 @@ namespace SLG.Saves
         public List<string> UnlockedChapterIds = new List<string> { "chapter-1" };
         public List<CampaignRosterEntry> Roster = new List<CampaignRosterEntry>();
         public List<CampaignInventoryEntry> Inventory = new List<CampaignInventoryEntry>();
+        public List<CampaignEquipmentEntry> Equipment = new List<CampaignEquipmentEntry>();
+        public List<string> ClaimedRewardBattleIds = new List<string>();
         public bool DemoCompleted;
         public SaveMetadata Metadata = new SaveMetadata();
     }
@@ -124,6 +127,8 @@ namespace SLG.Saves
         public List<ReinforcementRuntimeSaveData> Reinforcements = new List<ReinforcementRuntimeSaveData>();
         public List<CampaignRosterEntry> CampaignRoster = new List<CampaignRosterEntry>();
         public List<CampaignInventoryEntry> CampaignInventory = new List<CampaignInventoryEntry>();
+        public List<CampaignEquipmentEntry> CampaignEquipment = new List<CampaignEquipmentEntry>();
+        public List<string> CampaignClaimedRewards = new List<string>();
         public string CampaignNextChapterId;
         public string CampaignNextBattleId;
         public string ObjectiveSummary;

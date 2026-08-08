@@ -7,7 +7,8 @@ namespace SLG.UI
 {
     public sealed class UnitActionMenuController : MonoBehaviour
     {
-        private const float EdgePadding = 16f;
+        private const float EdgePadding = 24f;
+        private const float HudTopReserve = 80f;
 
         [SerializeField] private RectTransform menuRoot;
         [SerializeField] private Button attackButton;
@@ -16,7 +17,7 @@ namespace SLG.UI
         [SerializeField] private Button waitButton;
         [SerializeField] private Button cancelButton;
         [SerializeField] private float anchorHeight = 1.8f;
-        [SerializeField] private float buttonSpacing = 64f;
+        [SerializeField] private float buttonSpacing = 72f;
 
         private Canvas canvas;
         private Camera targetCamera;
@@ -41,14 +42,25 @@ namespace SLG.UI
 
         public void Configure(UnityAction attack, UnityAction skills, UnityAction wait, UnityAction cancel)
         {
+            Configure(attack, skills, null, wait, cancel);
+        }
+
+        public void Configure(UnityAction attack, UnityAction skills, UnityAction items, UnityAction wait, UnityAction cancel)
+        {
             EnsureUi();
             SetButtonAction(attackButton, attack);
             SetButtonAction(skillsButton, skills);
+            SetButtonAction(itemsButton, items);
             SetButtonAction(waitButton, wait);
             SetButtonAction(cancelButton, cancel);
         }
 
         public void Show(Unit unit, bool canCancelSelection, bool skillsAvailable)
+        {
+            Show(unit, canCancelSelection, skillsAvailable, false);
+        }
+
+        public void Show(Unit unit, bool canCancelSelection, bool skillsAvailable, bool itemsAvailable)
         {
             EnsureUi();
             if (unit == null || !unit.IsAlive || menuRoot == null)
@@ -63,7 +75,7 @@ namespace SLG.UI
             attackButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, buttonSpacing);
             cancelButton.GetComponent<RectTransform>().anchoredPosition = Vector2.zero;
             SetButtonEnabled(skillsButton, skillsAvailable);
-            SetButtonEnabled(itemsButton, false);
+            SetButtonEnabled(itemsButton, itemsAvailable);
             cancelButton.gameObject.SetActive(true);
             cancelButton.interactable = canCancelSelection;
             menuRoot.gameObject.SetActive(true);
@@ -116,27 +128,33 @@ namespace SLG.UI
                 return;
             }
 
-            Vector3 worldAnchor = anchoredUnit.transform.position + Vector3.up * anchorHeight;
-            Vector3 screenPoint = camera.WorldToScreenPoint(worldAnchor);
-            if (screenPoint.z <= 0f)
+            Vector3 unitScreenPos3 = camera.WorldToScreenPoint(anchoredUnit.transform.position);
+            if (unitScreenPos3.z <= 0f)
             {
                 Hide();
                 return;
             }
 
+            Vector2 unitScreenPos = new Vector2(unitScreenPos3.x, unitScreenPos3.y);
             Vector2 size = GetCurrentBoundsSize();
+
+            // Place menu below the unit by default to avoid HUD at top
+            Vector2 desired = unitScreenPos + new Vector2(0f, -size.y * 0.6f - 28f);
+
+            // If unit is near bottom, place above instead
+            if (desired.y < EdgePadding + size.y * 0.5f)
+                desired.y = unitScreenPos.y + size.y * 0.6f + 28f;
+
             Vector2 clamped = new Vector2(
-                Mathf.Clamp(screenPoint.x, EdgePadding + size.x * 0.5f, Screen.width - EdgePadding - size.x * 0.5f),
-                Mathf.Clamp(screenPoint.y, EdgePadding + size.y * 0.5f, Screen.height - EdgePadding - size.y * 0.5f));
-            
-            // Avoid placing directly on top of the unit
-            Vector2 unitScreenPos = camera.WorldToScreenPoint(anchoredUnit.transform.position);
-            if (Mathf.Abs(clamped.x - unitScreenPos.x) < size.x * 0.4f && unitScreenPos.y < Screen.height * 0.5f)
-            {
-                clamped.y = Mathf.Max(clamped.y, unitScreenPos.y - size.y - 20f);
-            }
-            
-            // Use anchoredPosition for ScreenSpaceOverlay canvas (screen-space coordinates)
+                Mathf.Clamp(desired.x, EdgePadding + size.x * 0.5f, Screen.width - EdgePadding - size.x * 0.5f),
+                Mathf.Clamp(desired.y, EdgePadding + size.y * 0.5f, Screen.height - HudTopReserve - size.y * 0.5f));
+
+            // Final HUD overlap guard: keep top of menu below HUD reserve
+            float top = clamped.y + size.y * 0.5f;
+            float hudBottom = Screen.height - HudTopReserve;
+            if (top > hudBottom)
+                clamped.y = hudBottom - size.y * 0.5f;
+
             if (canvas == null || canvas.renderMode == RenderMode.ScreenSpaceOverlay)
             {
                 menuRoot.anchoredPosition = clamped;
@@ -185,12 +203,16 @@ namespace SLG.UI
             {
                 GameObject rootObject = new GameObject("Unit Action Menu", typeof(RectTransform), typeof(Image));
                 rootObject.transform.SetParent(canvas.transform, false);
+                // Ensure menu renders above HUD (HUD is on same canvas, later sibling = higher)
+                rootObject.transform.SetAsLastSibling();
                 menuRoot = rootObject.GetComponent<RectTransform>();
                 menuRoot.anchorMin = new Vector2(0f, 0f);
                 menuRoot.anchorMax = new Vector2(0f, 0f);
                 menuRoot.pivot = new Vector2(0.5f, 0.5f);
-                menuRoot.sizeDelta = new Vector2(240f, 240f);
-                rootObject.GetComponent<Image>().color = new Color(0.05f, 0.05f, 0.08f, 0.6f);
+                menuRoot.sizeDelta = new Vector2(280f, 280f);
+                var bg = rootObject.GetComponent<Image>();
+                bg.color = new Color(0.05f, 0.05f, 0.08f, 0.78f);
+                bg.raycastTarget = false;
             }
 
             attackButton ??= CreateButton("Attack Button", "Attack", new Vector2(0f, buttonSpacing), true, ButtonRole.Primary);

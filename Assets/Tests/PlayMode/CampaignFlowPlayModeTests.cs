@@ -20,13 +20,21 @@ namespace SLG.Tests.PlayMode
         [SetUp]
         public void Setup()
         {
+            GameShellServices.Clear();
             _storage = new InMemorySaveStorage();
             _storage.ClearAll();
             _repository = new SaveRepository(_storage);
+            GameShellServices.UseRepositoryForTests(_repository);
             _flow = new GameFlowService();
             _flow.DemoState = DemoFlowState.NotStarted;
             _flow.IsTransitionInProgress = false;
             _processor = new CampaignFlowService(_flow, _repository);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            GameShellServices.Clear();
         }
 
         [UnityTest]

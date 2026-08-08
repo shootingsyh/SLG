@@ -82,6 +82,21 @@ namespace SLG.Tests
         }
 
         [Test]
+        public void VictoryProcessed_StateOnlyThenContinue_LoadsChapterResultOnce()
+        {
+            var loader = new RecordingSceneLoader();
+            CampaignFlowService processor = new CampaignFlowService(flow, repository, loader);
+            processor.ConfigureBattle(BattleTestPresetId.DemoBattle1Eliminate);
+
+            Assert.That(processor.TryProcessVictoryStateOnly(), Is.True);
+            Assert.That(flow.DemoState, Is.EqualTo(DemoFlowState.Battle1Complete));
+            Assert.That(processor.TryProcessVictory(), Is.True);
+            Assert.That(flow.CurrentScreen, Is.EqualTo(ShellScreen.ChapterResult));
+            Assert.That(loader.LastLoadedScene, Is.EqualTo(CampaignSceneNames.ChapterResult.ToString()));
+            Assert.That(processor.TryProcessVictory(), Is.False);
+        }
+
+        [Test]
         public void DefeatProcessed_IsIdempotent()
         {
             CampaignFlowService processor = new CampaignFlowService(flow, repository);
@@ -297,6 +312,22 @@ namespace SLG.Tests
             Assert.That(Enum.IsDefined(typeof(SceneLoadedReason), 0), Is.True);
             Assert.That(Enum.IsDefined(typeof(SceneLoadedReason), 1), Is.True);
             Assert.That(Enum.IsDefined(typeof(SceneLoadedReason), 2), Is.True);
+        }
+
+        private sealed class RecordingSceneLoader : ISceneLoader
+        {
+            public string LastLoadedScene { get; private set; }
+
+            public bool CanLoad(string sceneName)
+            {
+                return true;
+            }
+
+            public void Load(string sceneName, Action<bool, string> completed)
+            {
+                LastLoadedScene = sceneName;
+                completed?.Invoke(true, string.Empty);
+            }
         }
     }
 }

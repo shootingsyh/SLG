@@ -2,6 +2,8 @@ using System.Collections;
 using System.Collections.Generic;
 using SLG.Core;
 using SLG.Grid;
+using SLG.Items;
+using SLG.Saves;
 using SLG.Skills;
 using SLG.UI;
 using UnityEngine;
@@ -21,10 +23,13 @@ namespace SLG.Units
             ChoosingAction,
             ChoosingSkill,
             ChoosingSkillTarget,
+            ChoosingItem,
+            ChoosingItemTarget,
             ChoosingAttackTarget,
             ReturningToOriginalTile,
             ResolvingCombat,
             ResolvingSkill,
+            ResolvingItem,
             BattleEnded
         }
 
@@ -33,6 +38,7 @@ namespace SLG.Units
         [SerializeField] private UnitProfileController unitProfileController;
         [SerializeField] private UnitActionMenuController actionMenuController;
         [SerializeField] private SkillSelectionPanelController skillSelectionPanelController;
+        [SerializeField] private ItemSelectionPanelController itemSelectionPanelController;
 
         private readonly List<Tile> highlightedMovementTiles = new List<Tile>();
         private readonly HashSet<Tile> reachableTiles = new HashSet<Tile>();
@@ -44,6 +50,12 @@ namespace SLG.Units
         private readonly List<Unit> highlightedSkillAffectedUnits = new List<Unit>();
         private readonly List<Tile> skillAreaBuffer = new List<Tile>();
         private readonly List<Unit> skillAffectedUnitBuffer = new List<Unit>();
+        private readonly List<Tile> highlightedItemRangeTiles = new List<Tile>();
+        private readonly List<Tile> highlightedItemTargetTiles = new List<Tile>();
+        private readonly List<Tile> highlightedItemAreaTiles = new List<Tile>();
+        private readonly List<Unit> highlightedItemAffectedUnits = new List<Unit>();
+        private readonly List<Tile> itemAreaBuffer = new List<Tile>();
+        private readonly List<Unit> itemAffectedUnitBuffer = new List<Unit>();
         private readonly List<Tile> pathBuffer = new List<Tile>();
         private readonly List<Tile> provisionalMovementPath = new List<Tile>();
         private readonly List<Tile> returnPathBuffer = new List<Tile>();
@@ -56,20 +68,24 @@ namespace SLG.Units
         private Unit currentAttackTarget;
         private SkillDefinition selectedSkill;
         private Tile currentSkillTargetTile;
+        private ItemDefinition selectedItem;
+        private Tile currentItemTargetTile;
         private PlayerInteractionState interactionState = PlayerInteractionState.Idle;
         private bool hasDisplacedProvisionalMove;
 
         public PlayerInteractionState CurrentInteractionState => interactionState;
         public bool IsInteractionIdle => interactionState == PlayerInteractionState.Idle;
-        public bool IsUnitMoving => interactionState == PlayerInteractionState.Moving || interactionState == PlayerInteractionState.ReturningToOriginalTile || interactionState == PlayerInteractionState.ResolvingCombat || interactionState == PlayerInteractionState.ResolvingSkill;
+        public bool IsUnitMoving => interactionState == PlayerInteractionState.Moving || interactionState == PlayerInteractionState.ReturningToOriginalTile || interactionState == PlayerInteractionState.ResolvingCombat || interactionState == PlayerInteractionState.ResolvingSkill || interactionState == PlayerInteractionState.ResolvingItem;
         public bool HasPendingAction => interactionState != PlayerInteractionState.Idle && interactionState != PlayerInteractionState.BattleEnded;
         public Unit SelectedUnit => selectedUnit;
         public SkillDefinition SelectedSkill => selectedSkill;
+        public ItemDefinition SelectedItem => selectedItem;
         public Tile OriginalTile => originalTile;
         public Tile CurrentTile => currentTile;
         public bool HasProvisionalMovement => hasDisplacedProvisionalMove;
         public bool IsResolvingCombat => interactionState == PlayerInteractionState.ResolvingCombat;
         public bool IsResolvingSkill => interactionState == PlayerInteractionState.ResolvingSkill;
+        public bool IsResolvingItem => interactionState == PlayerInteractionState.ResolvingItem;
 
         public void ConfigureRuntime(GridSystem gridSystem, BattleTurnController battleTurnController)
         {
@@ -157,6 +173,9 @@ namespace SLG.Units
                 case PlayerInteractionState.ChoosingSkillTarget:
                     HandleSkillTargetUnitClicked(unit);
                     break;
+                case PlayerInteractionState.ChoosingItemTarget:
+                    HandleItemTargetUnitClicked(unit);
+                    break;
             }
         }
 
@@ -177,6 +196,9 @@ namespace SLG.Units
                 case PlayerInteractionState.ChoosingSkillTarget:
                     HandleSkillTargetTileClicked(tile);
                     return true;
+                case PlayerInteractionState.ChoosingItemTarget:
+                    HandleItemTargetTileClicked(tile);
+                    return true;
                 default:
                     return true;
             }
@@ -188,11 +210,15 @@ namespace SLG.Units
             {
                 ShowSkillTargetPreview(tile);
             }
+            else if (interactionState == PlayerInteractionState.ChoosingItemTarget)
+            {
+                ShowItemTargetPreview(tile);
+            }
         }
 
         public void HandleTileHoverStayed(Tile tile)
         {
-            if (interactionState == PlayerInteractionState.ChoosingSkillTarget)
+            if (interactionState == PlayerInteractionState.ChoosingSkillTarget || interactionState == PlayerInteractionState.ChoosingItemTarget)
             {
                 battleTurnController?.UpdateCombatPreviewPosition();
             }
@@ -203,6 +229,10 @@ namespace SLG.Units
             if (interactionState == PlayerInteractionState.ChoosingSkillTarget && tile == currentSkillTargetTile)
             {
                 ClearSkillHoverPreview();
+            }
+            else if (interactionState == PlayerInteractionState.ChoosingItemTarget && tile == currentItemTargetTile)
+            {
+                ClearItemHoverPreview();
             }
         }
 
@@ -220,6 +250,11 @@ namespace SLG.Units
                 ShowSkillTargetPreview(unit.OccupiedTile);
             }
 
+            if (interactionState == PlayerInteractionState.ChoosingItemTarget && unit != null && unit.OccupiedTile != null)
+            {
+                ShowItemTargetPreview(unit.OccupiedTile);
+            }
+
             UpdateProfileVisibility();
         }
 
@@ -233,6 +268,11 @@ namespace SLG.Units
             if (interactionState == PlayerInteractionState.ChoosingSkillTarget && unit != null && unit.OccupiedTile == currentSkillTargetTile)
             {
                 ClearSkillHoverPreview();
+            }
+
+            if (interactionState == PlayerInteractionState.ChoosingItemTarget && unit != null && unit.OccupiedTile == currentItemTargetTile)
+            {
+                ClearItemHoverPreview();
             }
 
             if (unit != null && unit == hoveredUnit)
@@ -259,6 +299,11 @@ namespace SLG.Units
             {
                 battleTurnController?.UpdateCombatPreviewPosition();
             }
+
+            if (interactionState == PlayerInteractionState.ChoosingItemTarget && unit != null && unit.OccupiedTile == currentItemTargetTile)
+            {
+                battleTurnController?.UpdateCombatPreviewPosition();
+            }
         }
 
         public void SelectUnit(Unit unit)
@@ -278,8 +323,6 @@ namespace SLG.Units
             gridSystem?.ClearSelectedTile();
             SetInteractionState(PlayerInteractionState.ChoosingMovement);
 
-            Debug.Log($"Selected Unit: {selectedUnit.DisplayName} at {selectedUnit.CurrentCoordinate}");
-            Debug.Log($"Movement Range Tiles: {highlightedMovementTiles.Count}");
         }
 
         public bool TrySelectUnit(Unit unit)
@@ -350,9 +393,40 @@ namespace SLG.Units
             return selectedSkill == skill && interactionState == PlayerInteractionState.ChoosingSkillTarget;
         }
 
+        public bool TryOpenItems()
+        {
+            if ((interactionState != PlayerInteractionState.ChoosingAction && interactionState != PlayerInteractionState.ChoosingMovement) || selectedUnit == null || selectedUnit.HasActed || !HasUsableItems(selectedUnit))
+                return false;
+            BeginItemSelection();
+            return interactionState == PlayerInteractionState.ChoosingItem;
+        }
+
+        public bool TryChooseItem(ItemDefinition item)
+        {
+            if (interactionState != PlayerInteractionState.ChoosingItem || selectedUnit == null || item == null) return false;
+            SelectItem(item);
+            return selectedItem == item && interactionState == PlayerInteractionState.ChoosingItemTarget;
+        }
+
+        public bool TryChooseItemTarget(Unit target)
+        {
+            if (interactionState != PlayerInteractionState.ChoosingItemTarget) return false;
+            var prev = interactionState;
+            HandleUnitClicked(target);
+            return interactionState != prev;
+        }
+
+        public bool TryChooseItemGroundTarget(Tile tile)
+        {
+            if (interactionState != PlayerInteractionState.ChoosingItemTarget || tile == null) return false;
+            var prev = interactionState;
+            HandleItemTargetTileClicked(tile);
+            return interactionState != prev;
+        }
+
         public bool TryChooseUnitTarget(Unit target)
         {
-            if (interactionState != PlayerInteractionState.ChoosingAttackTarget && interactionState != PlayerInteractionState.ChoosingSkillTarget)
+            if (interactionState != PlayerInteractionState.ChoosingMovement && interactionState != PlayerInteractionState.ChoosingAttackTarget && interactionState != PlayerInteractionState.ChoosingSkillTarget)
             {
                 return false;
             }
@@ -452,6 +526,22 @@ namespace SLG.Units
             SetInteractionState(PlayerInteractionState.ChoosingSkillTarget);
         }
 
+        public void BeginItemSelection()
+        {
+            if ((interactionState != PlayerInteractionState.ChoosingAction && interactionState != PlayerInteractionState.ChoosingMovement) || selectedUnit == null || selectedUnit.HasActed || !HasUsableItems(selectedUnit))
+                return;
+            selectedItem = null;
+            SetInteractionState(PlayerInteractionState.ChoosingItem);
+        }
+
+        public void SelectItem(ItemDefinition item)
+        {
+            if (interactionState != PlayerInteractionState.ChoosingItem || selectedUnit == null || item == null) return;
+            if (!HasUsableItems(selectedUnit) || GameShellServices.CampaignInventory.GetQuantity(item.ItemId) <= 0) return;
+            selectedItem = item;
+            SetInteractionState(PlayerInteractionState.ChoosingItemTarget);
+        }
+
         public void CancelCurrentAction()
         {
             switch (interactionState)
@@ -462,8 +552,15 @@ namespace SLG.Units
                 case PlayerInteractionState.ChoosingSkillTarget:
                     SetInteractionState(PlayerInteractionState.ChoosingSkill);
                     break;
+                case PlayerInteractionState.ChoosingItemTarget:
+                    SetInteractionState(PlayerInteractionState.ChoosingItem);
+                    break;
                 case PlayerInteractionState.ChoosingSkill:
                     selectedSkill = null;
+                    SetInteractionState(PlayerInteractionState.ChoosingAction);
+                    break;
+                case PlayerInteractionState.ChoosingItem:
+                    selectedItem = null;
                     SetInteractionState(PlayerInteractionState.ChoosingAction);
                     break;
                 case PlayerInteractionState.ChoosingAction:
@@ -515,6 +612,23 @@ namespace SLG.Units
             {
                 skillSelectionPanelController?.Hide();
             }
+
+            if (oldState == PlayerInteractionState.ChoosingItemTarget)
+            {
+                ClearItemTargetingHighlights();
+                ClearItemHoverPreview();
+            }
+
+            if (oldState == PlayerInteractionState.ChoosingItem)
+            {
+                itemSelectionPanelController?.Hide();
+            }
+
+            if (oldState == PlayerInteractionState.ResolvingItem)
+            {
+                ClearItemTargetingHighlights();
+                ClearItemHoverPreview();
+            }
         }
 
         private void EnterState(PlayerInteractionState newState)
@@ -539,11 +653,14 @@ namespace SLG.Units
                 case PlayerInteractionState.ReturningToOriginalTile:
                 case PlayerInteractionState.ResolvingCombat:
                 case PlayerInteractionState.ResolvingSkill:
+                case PlayerInteractionState.ResolvingItem:
                     ClearMovementRangePreview();
                     ClearAttackTargetingHighlights();
                     ClearSkillTargetingHighlights();
+                    ClearItemTargetingHighlights();
                     ClearCombatPreview();
                     skillSelectionPanelController?.Hide();
+                    itemSelectionPanelController?.Hide();
                     actionMenuController?.Hide();
                     break;
                 case PlayerInteractionState.ChoosingAction:
@@ -551,32 +668,61 @@ namespace SLG.Units
                     ClearMovementRangePreview();
                     ClearAttackTargetingHighlights();
                     ClearSkillTargetingHighlights();
+                    ClearItemTargetingHighlights();
                     ClearCombatPreview();
                     skillSelectionPanelController?.Hide();
-                    actionMenuController?.Show(selectedUnit, true, HasUsableSkills(selectedUnit));
+                    itemSelectionPanelController?.Hide();
+                    actionMenuController?.Show(selectedUnit, true, HasUsableSkills(selectedUnit), HasUsableItems(selectedUnit));
                     break;
                 case PlayerInteractionState.ChoosingSkill:
                     ValidateSelectedUnitForState(newState);
                     ClearMovementRangePreview();
                     ClearAttackTargetingHighlights();
                     ClearSkillTargetingHighlights();
+                    ClearItemTargetingHighlights();
                     ClearCombatPreview();
                     actionMenuController?.Hide();
+                    itemSelectionPanelController?.Hide();
                     skillSelectionPanelController?.Show(selectedUnit);
                     break;
                 case PlayerInteractionState.ChoosingSkillTarget:
                     ValidateSelectedUnitForState(newState);
                     skillSelectionPanelController?.Hide();
+                    itemSelectionPanelController?.Hide();
                     actionMenuController?.Hide();
                     ClearMovementRangePreview();
                     ClearAttackTargetingHighlights();
+                    ClearItemTargetingHighlights();
                     ClearCombatPreview();
                     RefreshSkillTargetingHighlights();
+                    break;
+                case PlayerInteractionState.ChoosingItem:
+                    ValidateSelectedUnitForState(newState);
+                    ClearMovementRangePreview();
+                    ClearAttackTargetingHighlights();
+                    ClearSkillTargetingHighlights();
+                    ClearItemTargetingHighlights();
+                    ClearCombatPreview();
+                    actionMenuController?.Hide();
+                    skillSelectionPanelController?.Hide();
+                    itemSelectionPanelController?.Show(selectedUnit, GameShellServices.CampaignInventory);
+                    break;
+                case PlayerInteractionState.ChoosingItemTarget:
+                    ValidateSelectedUnitForState(newState);
+                    skillSelectionPanelController?.Hide();
+                    itemSelectionPanelController?.Hide();
+                    actionMenuController?.Hide();
+                    ClearMovementRangePreview();
+                    ClearAttackTargetingHighlights();
+                    ClearSkillTargetingHighlights();
+                    ClearCombatPreview();
+                    RefreshItemTargetingHighlights();
                     break;
                 case PlayerInteractionState.ChoosingAttackTarget:
                     ValidateSelectedUnitForState(newState);
                     actionMenuController?.Hide();
                     skillSelectionPanelController?.Hide();
+                    itemSelectionPanelController?.Hide();
                     ClearMovementRangePreview();
                     ClearCombatPreview();
                     RefreshAttackRangePreview(selectedUnit);
@@ -586,9 +732,11 @@ namespace SLG.Units
                     ClearMovementRangePreview();
                     ClearAttackTargetingHighlights();
                     ClearSkillTargetingHighlights();
+                    ClearItemTargetingHighlights();
                     ClearCombatPreview();
                     actionMenuController?.Hide();
                     skillSelectionPanelController?.Hide();
+                    itemSelectionPanelController?.Hide();
                     unitProfileController?.Hide();
                     break;
             }
@@ -785,7 +933,7 @@ namespace SLG.Units
 
         private void BeginPlayerAttack(Unit target)
         {
-            if (interactionState != PlayerInteractionState.ChoosingAttackTarget || battleTurnController == null || selectedUnit == null || target == null || !CombatResolver.CanAttack(selectedUnit, target))
+            if ((interactionState != PlayerInteractionState.ChoosingMovement && interactionState != PlayerInteractionState.ChoosingAttackTarget) || battleTurnController == null || selectedUnit == null || target == null || !CombatResolver.CanAttack(selectedUnit, target))
             {
                 return;
             }
@@ -1095,6 +1243,130 @@ namespace SLG.Units
             battleTurnController?.HideCombatPreview();
         }
 
+        private void RefreshItemTargetingHighlights()
+        {
+            ClearItemTargetingHighlights();
+            if (selectedUnit == null || selectedItem == null || gridSystem == null) return;
+            gridSystem.FillTilesInRange(selectedUnit, selectedItem.MinimumRange, selectedItem.MaximumRange, highlightedItemRangeTiles);
+            for (int i = 0; i < highlightedItemRangeTiles.Count; i++)
+            {
+                Tile tile = highlightedItemRangeTiles[i];
+                tile.SetAttackRangeHighlighted(true);
+                if (ItemResolver.CanTargetTile(selectedUnit, selectedItem, tile, GameShellServices.CampaignInventory))
+                {
+                    tile.SetSkillTargetHighlighted(true);
+                    highlightedItemTargetTiles.Add(tile);
+                }
+            }
+        }
+
+        private void ClearItemTargetingHighlights()
+        {
+            for (int i = 0; i < highlightedItemRangeTiles.Count; i++)
+                if (highlightedItemRangeTiles[i] != null) highlightedItemRangeTiles[i].SetAttackRangeHighlighted(false);
+            for (int i = 0; i < highlightedItemTargetTiles.Count; i++)
+                if (highlightedItemTargetTiles[i] != null) highlightedItemTargetTiles[i].SetSkillTargetHighlighted(false);
+            ClearItemHoverPreview();
+            highlightedItemRangeTiles.Clear();
+            highlightedItemTargetTiles.Clear();
+        }
+
+        private void ShowItemTargetPreview(Tile tile)
+        {
+            if (selectedUnit == null || selectedItem == null || tile == null || !ItemResolver.CanTargetTile(selectedUnit, selectedItem, tile, GameShellServices.CampaignInventory))
+            {
+                ClearItemHoverPreview();
+                return;
+            }
+            ClearItemHoverPreview();
+            currentItemTargetTile = tile;
+            // For single-target items, just highlight the target unit/tile
+            if (tile.OccupyingUnit != null && ItemResolver.CanTargetUnit(selectedUnit, selectedItem, tile.OccupyingUnit, GameShellServices.CampaignInventory))
+            {
+                tile.OccupyingUnit.SetCombatPreviewHighlighted(true);
+                highlightedItemAffectedUnits.Add(tile.OccupyingUnit);
+            }
+            else if (tile != null)
+            {
+                tile.SetSkillAreaHighlighted(true);
+                highlightedItemAreaTiles.Add(tile);
+            }
+            battleTurnController?.ShowSkillPreview(ItemResolver.BuildPreview(selectedUnit, selectedItem, tile));
+        }
+
+        private void ClearItemHoverPreview()
+        {
+            for (int i = 0; i < highlightedItemAreaTiles.Count; i++)
+                if (highlightedItemAreaTiles[i] != null) highlightedItemAreaTiles[i].SetSkillAreaHighlighted(false);
+            for (int i = 0; i < highlightedItemAffectedUnits.Count; i++)
+                if (highlightedItemAffectedUnits[i] != null) highlightedItemAffectedUnits[i].SetCombatPreviewHighlighted(false);
+            highlightedItemAreaTiles.Clear();
+            highlightedItemAffectedUnits.Clear();
+            itemAreaBuffer.Clear();
+            itemAffectedUnitBuffer.Clear();
+            currentItemTargetTile = null;
+            battleTurnController?.HideCombatPreview();
+        }
+
+        private void HandleItemTargetUnitClicked(Unit unit)
+        {
+            if (selectedItem == null || unit == null || !ItemResolver.CanTargetUnit(selectedUnit, selectedItem, unit, GameShellServices.CampaignInventory)) return;
+            CastSelectedItem(unit.OccupiedTile);
+        }
+
+        private void HandleItemTargetTileClicked(Tile tile)
+        {
+            if (selectedItem == null || tile == null || !ItemResolver.CanTargetTile(selectedUnit, selectedItem, tile, GameShellServices.CampaignInventory)) return;
+            CastSelectedItem(tile);
+        }
+
+        private void CastSelectedItem(Tile targetTile)
+        {
+            if (selectedUnit == null || selectedItem == null || targetTile == null) return;
+            // Validate quantity still available
+            if (GameShellServices.CampaignInventory.GetQuantity(selectedItem.ItemId) <= 0) return;
+            Unit targetUnit = targetTile.OccupyingUnit;
+            // For heal/damage, need to validate target
+            if (selectedItem.TargetType == ItemTargetType.Unit && targetUnit != null)
+            {
+                if (!ItemResolver.CanTargetUnit(selectedUnit, selectedItem, targetUnit, GameShellServices.CampaignInventory)) return;
+            }
+            else if (!ItemResolver.CanTargetTile(selectedUnit, selectedItem, targetTile, GameShellServices.CampaignInventory)) return;
+
+            // Resolve immediately and consume
+            currentItemTargetTile = targetTile;
+            SetInteractionState(PlayerInteractionState.ResolvingItem);
+            CompleteItem(selectedUnit, selectedItem, targetUnit ?? targetTile.OccupyingUnit, targetTile);
+        }
+
+        private void CompleteItem(Unit caster, ItemDefinition item, Unit target, Tile tile)
+        {
+            bool applied = false;
+            if (target != null)
+                applied = ItemResolver.Resolve(caster, item, target);
+            else if (item.TargetType == ItemTargetType.Ground)
+                applied = ItemResolver.Resolve(caster, item, null); // ground not used in v1
+
+            if (!applied)
+            {
+                SetInteractionState(PlayerInteractionState.ChoosingItemTarget);
+                return;
+            }
+
+            // Consume one
+            GameShellServices.CampaignInventory.Remove(item.ItemId, 1);
+
+            // Check battle end after item (heal doesn't end, bomb might)
+            if (battleTurnController != null && battleTurnController.CheckBattleEndAfterSkill())
+            {
+                ClearSelectionAndRuntimeData(true);
+                SetInteractionState(PlayerInteractionState.BattleEnded);
+                return;
+            }
+
+            CommitSelectedUnitAction();
+        }
+
         private void ShowPlayerAttackPreview(Unit target)
         {
             if (battleTurnController == null || selectedUnit == null || target == null || !CombatResolver.CanAttack(selectedUnit, target))
@@ -1127,9 +1399,11 @@ namespace SLG.Units
             ClearMovementRangePreview();
             ClearAttackTargetingHighlights();
             ClearSkillTargetingHighlights();
+            ClearItemTargetingHighlights();
             ClearCombatPreview();
             actionMenuController?.Hide();
             skillSelectionPanelController?.Hide();
+            itemSelectionPanelController?.Hide();
 
             if (selectedUnit != null)
             {
@@ -1142,6 +1416,8 @@ namespace SLG.Units
             currentAttackTarget = null;
             selectedSkill = null;
             currentSkillTargetTile = null;
+            selectedItem = null;
+            currentItemTargetTile = null;
             hasDisplacedProvisionalMove = false;
             provisionalMovementPath.Clear();
             pathBuffer.Clear();
@@ -1208,6 +1484,18 @@ namespace SLG.Units
                 }
             }
 
+            return false;
+        }
+
+        private static bool HasUsableItems(Unit unit)
+        {
+            if (unit == null) return false;
+            var inv = GameShellServices.CampaignInventory;
+            foreach (var kv in inv.Quantities)
+            {
+                var def = ItemCatalog.Get(kv.Key);
+                if (def != null && def.UsableInBattle && kv.Value >0) return true;
+            }
             return false;
         }
 
@@ -1307,8 +1595,19 @@ namespace SLG.Units
                 skillSelectionPanelController = gameObject.AddComponent<SkillSelectionPanelController>();
             }
 
-            actionMenuController.Configure(BeginAttackTargeting, BeginSkillSelection, WaitSelectedUnit, CancelCurrentAction);
+            if (itemSelectionPanelController == null)
+            {
+                itemSelectionPanelController = FindAnyObjectByType<ItemSelectionPanelController>();
+            }
+
+            if (itemSelectionPanelController == null)
+            {
+                itemSelectionPanelController = gameObject.AddComponent<ItemSelectionPanelController>();
+            }
+
+            actionMenuController.Configure(BeginAttackTargeting, BeginSkillSelection, BeginItemSelection, WaitSelectedUnit, CancelCurrentAction);
             skillSelectionPanelController.Configure(SelectSkill, CancelCurrentAction);
+            itemSelectionPanelController.Configure(SelectItem, CancelCurrentAction);
         }
 
         private static bool WasCancelPressed()

@@ -16,6 +16,7 @@ namespace SLG.Shell
         private BattleTestPresetId currentBattlePreset;
         private bool resultProcessing;
         private bool resultProcessed;
+        private bool resultSceneTransitionRequested;
         private string expectedSceneName;
 
         public CampaignFlowService(GameFlowService flowService, SaveRepository saveRepository)
@@ -40,6 +41,7 @@ namespace SLG.Shell
             currentBattlePreset = preset;
             resultProcessing = false;
             resultProcessed = false;
+            resultSceneTransitionRequested = false;
         }
 
         public string ResolveDestination(DemoFlowState state)
@@ -66,9 +68,26 @@ namespace SLG.Shell
 
         private bool TryProcessVictoryInternal(bool loadScene)
         {
-            if (resultProcessing || resultProcessed)
+            if (resultProcessing)
             {
                 return false;
+            }
+
+            if (resultProcessed)
+            {
+                if (!loadScene || resultSceneTransitionRequested)
+                {
+                    return false;
+                }
+
+                if (flow.IsTransitionInProgress)
+                {
+                    return false;
+                }
+
+                bool transitionSucceeded = TryLoadScene(CampaignSceneNames.ChapterResult.ToString(), ShellScreen.ChapterResult);
+                resultSceneTransitionRequested = transitionSucceeded;
+                return transitionSucceeded;
             }
 
             if (flow.IsTransitionInProgress)
@@ -87,12 +106,16 @@ namespace SLG.Shell
 
             try
             {
+                // Grant deterministic rewards exactly once per battle victory
+                Items.BattleRewards.GrantIfNotClaimed(definition.BattleId);
+
                 CampaignSaveData data = BuildCampaignData(definition, DemoResultType.Victory);
 
                 SaveOperationResult saveOperation = repository.SaveCampaign(data, DemoSaveSlotId);
                 if (!saveOperation.Success)
                 {
                     flow.LastError = $"Campaign save failed: {saveOperation.Message}";
+                    resultProcessing = false;
                     return false;
                 }
 
@@ -109,6 +132,7 @@ namespace SLG.Shell
 
                 string destinationScene = CampaignSceneNames.ChapterResult.ToString();
                 bool transitionSucceeded = TryLoadScene(destinationScene, ShellScreen.ChapterResult);
+                resultSceneTransitionRequested = transitionSucceeded;
 
                 resultProcessed = true;
                 return transitionSucceeded;
@@ -123,7 +147,7 @@ namespace SLG.Shell
 
         public bool TryTransitionToTitle()
         {
-            if (resultProcessing || resultProcessed)
+            if (resultProcessing)
             {
                 return false;
             }
@@ -134,8 +158,16 @@ namespace SLG.Shell
             }
 
             resultProcessing = true;
+            // Allow exit to title even after victory was processed state-only (resultProcessed true)
+            resultProcessed = false;
             GameShellServices.Clear();
-            return TryLoadScene(CampaignSceneNames.Title.ToString(), ShellScreen.MainMenu);
+            bool transitionSucceeded = TryLoadScene(CampaignSceneNames.Title.ToString(), ShellScreen.MainMenu);
+            if (!transitionSucceeded)
+            {
+                resultProcessing = false;
+            }
+
+            return transitionSucceeded;
         }
 
         public bool TryProcessDefeat()
@@ -263,7 +295,9 @@ namespace SLG.Shell
             data.FlowScreen = GetFlowScreen(definition, result);
             data.UnlockedChapterIds = unlocked;
             data.Roster = new List<CampaignRosterEntry>();
-            data.Inventory = new List<CampaignInventoryEntry>();
+            data.Inventory = GameShellServices.CampaignInventory.ToEntries();
+            data.Equipment = GameShellServices.CampaignEquipment.ToEntries();
+            data.ClaimedRewardBattleIds = new System.Collections.Generic.List<string>(GameShellServices.ClaimedRewards);
             data.Metadata = new SaveMetadata();
             data.Metadata.SaveType = SaveConstants.CampaignSaveType;
             data.Metadata.ChapterId = "chapter-1";

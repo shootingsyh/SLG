@@ -256,6 +256,7 @@ namespace SLG.Saves
             BattleSaveData data = new BattleSaveData
             {
                 RunId = runId,
+                GameId = GameShellServices.ActiveGameId,
                 ScenarioId = context.Scenario.Configuration.ScenarioName,
                 ChapterId = chapterId,
                 ChapterName = chapterName,
@@ -265,6 +266,11 @@ namespace SLG.Saves
                 CurrentRound = context.Scenario.CurrentRound,
                 CompletedRounds = context.Scenario.CompletedRounds,
                 CurrentPhase = context.Turns.CurrentPhase,
+                CampaignInventory = GameShellServices.CampaignInventory.ToEntries(),
+                CampaignEquipment = GameShellServices.CampaignEquipment.ToEntries(),
+                CampaignClaimedRewards = new System.Collections.Generic.List<string>(GameShellServices.ClaimedRewards),
+                CampaignNextChapterId = GameShellServices.GetPendingCampaignData()?.NextChapterId ?? string.Empty,
+                CampaignNextBattleId = GameShellServices.GetPendingCampaignData()?.NextBattleId ?? string.Empty,
                 ObjectiveSummary = objectiveSummary
             };
 
@@ -397,6 +403,11 @@ namespace SLG.Saves
 
             context.Scenario.RestoreRuntimeState(data.CurrentRound, data.CompletedRounds, data.CompletedObjectiveIndices, data.Reinforcements);
             context.Turns.RestoreLoadedBattleState(data.CurrentRound);
+            // Restore campaign snapshot (inventory, equipment, rewards, gameId)
+            GameShellServices.CampaignInventory.FromEntries(data.CampaignInventory);
+            GameShellServices.CampaignEquipment.FromEntries(data.CampaignEquipment, GameShellServices.CampaignInventory);
+            GameShellServices.SetClaimedRewards(data.CampaignClaimedRewards);
+            if (!string.IsNullOrEmpty(data.GameId)) GameShellServices.ActiveGameId = data.GameId;
             return true;
         }
 

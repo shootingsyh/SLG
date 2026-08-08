@@ -92,10 +92,17 @@ namespace SLG.Shell
                 return false;
             }
 
-            GameShellServices.Clear();
+            GameShellServices.Clear(preserveTestRepository: true);
             GameShellServices.ActiveGameId = gameId;
             DemoState = DemoFlowState.NotStarted;
             _testGameCompletedBattleCount = 0;
+
+            // Initial inventory for item-test game
+            if (gameId == "item-test")
+            {
+                GameShellServices.CampaignInventory.Add("potion", 2);
+                GameShellServices.CampaignInventory.Add("bomb", 1);
+            }
 
             BattleTestLabSession.Store(firstBattle.Preset, BattleTestPresetLibrary.Create(firstBattle.Preset));
             return TryLoadScene("BattleTestTemplate", ShellScreen.Battle);
@@ -143,7 +150,7 @@ namespace SLG.Shell
 
             GameShellServices.SetInterGameState(
                 gameId,
-                GetCompletedBattleId(completedBattleCount),
+                GetCompletedBattleId(gameDef, completedBattleCount),
                 GetNextBattleId(gameDef, completedBattleCount));
 
             DemoState = DemoFlowState.Battle1Complete;
@@ -167,7 +174,13 @@ namespace SLG.Shell
                 return false;
             }
 
-            GameBattleDefinition nextBattle = gameDef.GetNextBattle(_testGameCompletedBattleCount);
+            int completedCount = _testGameCompletedBattleCount;
+            if (completedCount <= 0)
+            {
+                completedCount = ResolveCompletedCount(gameDef, GameShellServices.InterGameCompletedBattleId, GameShellServices.InterGameNextBattleId);
+            }
+
+            GameBattleDefinition nextBattle = gameDef.GetNextBattle(completedCount);
             if (nextBattle == null)
             {
                 LastError = "No next battle available.";
@@ -214,6 +227,9 @@ namespace SLG.Shell
                 }
 
                 GameShellServices.SetPendingBattleSave(battle);
+                GameShellServices.CampaignInventory.FromEntries(battle.CampaignInventory);
+                GameShellServices.CampaignEquipment.FromEntries(battle.CampaignEquipment, GameShellServices.CampaignInventory);
+                GameShellServices.SetClaimedRewards(battle.CampaignClaimedRewards);
 
                 if (!string.IsNullOrEmpty(battle.GameId))
                     GameShellServices.ActiveGameId = battle.GameId;
@@ -223,6 +239,12 @@ namespace SLG.Shell
 
             if (resolution.Slot != null && resolution.Slot.Metadata != null)
             {
+                // Apply campaign snapshot for InterGame/ChapterResult so inventory/equipment are available
+                if (GameShellServices.Repository.TryLoadCampaign(resolution.Slot.FileName, out CampaignSaveData campData, out _))
+                {
+                    GameShellServices.ApplyCampaignSaveData(campData);
+                }
+
                 string gameId = resolution.Slot.Metadata.GameId;
                 if (!string.IsNullOrEmpty(gameId))
                     GameShellServices.ActiveGameId = gameId;
@@ -253,8 +275,7 @@ namespace SLG.Shell
                 return false;
             }
 
-            if (!string.IsNullOrEmpty(campaign.GameId))
-                GameShellServices.ActiveGameId = campaign.GameId;
+            GameShellServices.ApplyCampaignSaveData(campaign);
 
             BattleTestPresetId preset = ResolvePresetId(campaign);
             BattleTestLabSession.Store(preset, BattleTestPresetLibrary.Create(preset));
@@ -287,9 +308,10 @@ namespace SLG.Shell
             return BattleTestPresetId.DemoBattle1Eliminate;
         }
 
-        private static string GetCompletedBattleId(int completedCount)
+        private static string GetCompletedBattleId(GameDefinition gameDef, int completedCount)
         {
-            return completedCount > 0 ? $"battle-{completedCount}" : string.Empty;
+            GameBattleDefinition completed = gameDef.GetBattleAt(completedCount - 1);
+            return completed != null ? completed.BattleId : string.Empty;
         }
 
         private static string GetNextBattleId(GameDefinition gameDef, int completedCount)
@@ -297,6 +319,34 @@ namespace SLG.Shell
             GameBattleDefinition next = gameDef.GetNextBattle(completedCount);
             if (next == null) return null;
             return next.BattleId;
+        }
+
+        private static int ResolveCompletedCount(GameDefinition gameDef, string completedBattleId, string nextBattleId)
+        {
+            if (gameDef == null)
+                return 0;
+
+            if (!string.IsNullOrEmpty(nextBattleId))
+            {
+                for (int i = 0; i < gameDef.BattleCount; i++)
+                {
+                    GameBattleDefinition battle = gameDef.GetBattleAt(i);
+                    if (battle != null && battle.BattleId == nextBattleId)
+                        return i;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(completedBattleId))
+            {
+                for (int i = 0; i < gameDef.BattleCount; i++)
+                {
+                    GameBattleDefinition battle = gameDef.GetBattleAt(i);
+                    if (battle != null && battle.BattleId == completedBattleId)
+                        return i + 1;
+                }
+            }
+
+            return 0;
         }
 
         private bool TryLoadScene(string sceneName, ShellScreen nextScreen)
@@ -307,9 +357,9 @@ namespace SLG.Shell
                 return false;
             }
 
-            // In batchmode PlayMode tests, suppress actual scene loads for battle template/inter-game/title
-            // to keep the current battle context alive for assertions. Still update state and screen.
-            if (Application.isBatchMode && (sceneName == "BattleTestTemplate" || sceneName == "InterGame" || sceneName == "Title" || sceneName == "ChapterResult"))
+            // In batchmode PlayMode tests, suppress actual scene loads for battle template/inter-game
+            // to keep the current battle context alive for assertions. Title/ChapterResult loads are allowed to actually exit.
+            if ((Application.isBatchMode || GameShellServices.IsUsingTestRepository) && (sceneName == "BattleTestTemplate" || sceneName == "InterGame"))
             {
                 CurrentScreen = nextScreen;
                 LastError = string.Empty;

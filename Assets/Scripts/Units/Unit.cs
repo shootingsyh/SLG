@@ -104,11 +104,14 @@ namespace SLG.Units
         public string ArchetypeName => unitDefinition != null ? unitDefinition.ArchetypeName : "Unit";
         public UnitFaction Faction => faction;
         public GridCoordinate CurrentCoordinate => currentCoordinate;
-        public int MovementRange => unitDefinition != null ? unitDefinition.MovementRange : Mathf.Max(1, fallbackMovementRange);
+        public int BaseMovementRange => unitDefinition != null ? unitDefinition.MovementRange : Mathf.Max(1, fallbackMovementRange);
+        public int MovementRange => BaseMovementRange + GetEquipmentBonus(SLG.Items.EquipmentSlot.Accessory);
         public int MaxHealth => unitDefinition != null ? unitDefinition.MaxHealth : Mathf.Max(1, fallbackMaxHealth);
         public int CurrentHealth => currentHealth;
-        public int AttackPower => unitDefinition != null ? unitDefinition.AttackPower : fallbackAttackPower;
-        public int Defense => unitDefinition != null ? unitDefinition.Defense : fallbackDefense;
+        public int BaseAttackPower => unitDefinition != null ? unitDefinition.AttackPower : fallbackAttackPower;
+        public int AttackPower => BaseAttackPower + GetEquipmentBonus(SLG.Items.EquipmentSlot.Weapon);
+        public int BaseDefense => unitDefinition != null ? unitDefinition.Defense : fallbackDefense;
+        public int Defense => BaseDefense + GetEquipmentBonus(SLG.Items.EquipmentSlot.Armor);
         public int MinimumAttackRange => unitDefinition != null ? unitDefinition.MinimumAttackRange : Mathf.Max(1, fallbackMinimumAttackRange);
         public int AttackRange => unitDefinition != null ? unitDefinition.MaximumAttackRange : Mathf.Max(MinimumAttackRange, fallbackAttackRange);
         public MovementProfile MovementProfile => unitDefinition != null ? unitDefinition.MovementProfile : fallbackMovementProfile;
@@ -117,6 +120,23 @@ namespace SLG.Units
         public bool IsMoving => isMoving;
         public bool HasActed => hasActed;
         public bool IsAlive => !isDead && currentHealth > 0;
+
+        private int GetEquipmentBonus(SLG.Items.EquipmentSlot slot)
+        {
+            if (Faction != UnitFaction.Player) return 0;
+            if (string.IsNullOrEmpty(name)) return 0;
+            string equippedId = SLG.Saves.GameShellServices.CampaignEquipment.GetEquipped(name, slot);
+            if (string.IsNullOrEmpty(equippedId)) return 0;
+            var def = SLG.Items.ItemCatalog.Get(equippedId);
+            if (def == null) return 0;
+            return slot switch
+            {
+                SLG.Items.EquipmentSlot.Weapon => def.AttackBonus,
+                SLG.Items.EquipmentSlot.Armor => def.DefenseBonus,
+                SLG.Items.EquipmentSlot.Accessory => def.MovementBonus,
+                _ => 0
+            };
+        }
 
         public void Initialize(UnitSelectionController controller, GridCoordinate coordinate, Tile tile)
         {
