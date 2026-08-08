@@ -1,6 +1,7 @@
 using SLG.Core;
 using SLG.Terrain;
 using SLG.Units;
+using SLG.Visuals;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -237,10 +238,11 @@ namespace SLG.Grid
 
             normalColor = terrainDefinition != null ? terrainDefinition.DisplayColor : normalColor;
 
-            if (terrainDefinition != null && terrainDefinition.Material != null)
-            {
-                meshRenderer.sharedMaterial = terrainDefinition.Material;
-            }
+            meshRenderer.sharedMaterial = terrainDefinition != null && terrainDefinition.Material != null
+                ? terrainDefinition.Material
+                : RuntimeVisualMaterials.TileMaterial;
+
+            ApplyOverlayColor(meshRenderer, ref propertyBlock, normalColor);
 
             Vector3 localScale = transform.localScale;
             float heightOffset = terrainDefinition != null ? terrainDefinition.VisualHeightOffset : 0f;

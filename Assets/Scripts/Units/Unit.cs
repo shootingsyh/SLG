@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using SLG.Core;
 using SLG.Grid;
 using SLG.Skills;
+using SLG.Visuals;
 using UnityEngine;
 
 namespace SLG.Units
@@ -79,7 +80,9 @@ namespace SLG.Units
         [SerializeField] private float deathFadeDuration = 0.25f;
 
         private Renderer unitRenderer;
+        private Renderer[] visualRenderers = Array.Empty<Renderer>();
         private MaterialPropertyBlock propertyBlock;
+        private MaterialPropertyBlock visualBlock;
         private bool isSelected;
         private bool isMoving;
         private bool hasActed;
@@ -157,6 +160,8 @@ namespace SLG.Units
             this.movementSpeed = movementSpeed;
             InitializeHealthForBattle();
             ApplyDefinitionVisuals();
+            EnsureCharacterVisual();
+            RefreshVisualState();
         }
 
         public void RestoreRuntimeState(GridCoordinate coordinate, int health, bool acted)
@@ -507,6 +512,47 @@ namespace SLG.Units
             return true;
         }
 
+        private void EnsureCharacterVisual()
+        {
+            if (!CacheRenderer())
+            {
+                return;
+            }
+
+            unitRenderer.enabled = false;
+
+            Transform existing = transform.Find("Character Visual");
+            if (existing != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(existing.gameObject);
+                else
+                    DestroyImmediate(existing.gameObject);
+            }
+
+            GameObject visualPrefab = UnitVisualCatalog.LoadVisual(unitDefinition, faction);
+            if (visualPrefab == null)
+            {
+                visualRenderers = Array.Empty<Renderer>();
+                return;
+            }
+
+            GameObject visual = Instantiate(visualPrefab, transform);
+            visual.name = "Character Visual";
+            visual.transform.localPosition = new Vector3(0f, -tileHeightOffset, 0f);
+            visual.transform.localRotation = Quaternion.Euler(0f, faction == UnitFaction.Player ? 180f : 0f, 0f);
+            visual.transform.localScale = Vector3.one * 0.55f;
+
+            Collider[] childColliders = visual.GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < childColliders.Length; i++)
+            {
+                childColliders[i].enabled = false;
+            }
+
+            visualRenderers = visual.GetComponentsInChildren<Renderer>(true);
+            visualBlock ??= new MaterialPropertyBlock();
+        }
+
         private void InitializeHealth()
         {
             currentHealth = Mathf.Clamp(currentHealth, 0, MaxHealth);
@@ -652,12 +698,14 @@ namespace SLG.Units
 
         private void ApplyDefinitionVisuals()
         {
-            if (!CacheRenderer() || unitDefinition == null || unitDefinition.Material == null)
+            if (!CacheRenderer())
             {
                 return;
             }
 
-            unitRenderer.sharedMaterial = unitDefinition.Material;
+            unitRenderer.sharedMaterial = unitDefinition != null && unitDefinition.Material != null
+                ? unitDefinition.Material
+                : RuntimeVisualMaterials.UnitMaterial;
         }
 
         private void Die()
@@ -730,6 +778,20 @@ namespace SLG.Units
             propertyBlock.SetColor(BaseColorId, color);
             propertyBlock.SetColor(ColorId, color);
             unitRenderer.SetPropertyBlock(propertyBlock);
+
+            for (int i = 0; i < visualRenderers.Length; i++)
+            {
+                Renderer target = visualRenderers[i];
+                if (target == null)
+                {
+                    continue;
+                }
+
+                target.GetPropertyBlock(visualBlock);
+                visualBlock.SetColor(BaseColorId, color);
+                visualBlock.SetColor(ColorId, color);
+                target.SetPropertyBlock(visualBlock);
+            }
         }
 
         private void RefreshVisualState()
